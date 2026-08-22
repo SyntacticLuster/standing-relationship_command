@@ -21,6 +21,22 @@ type StoredWorkspace = {
   contactNotes: Array<{ contactId: string; body: string }>;
   draftCount: number;
 };
+
+type MailboxAccount = {
+  id: number;
+  host: string;
+  username: string;
+  status: string;
+  createdAt: string;
+};
+
+type MailboxStatus = {
+  account: MailboxAccount;
+  messageCount: number;
+  lastSyncedAt: string | null;
+} | null;
+
+type SyncState = "idle" | "syncing" | "synced" | "failed";
 type IconName =
   | "archive"
   | "arrow-left"
@@ -156,6 +172,10 @@ export default function StandingWorkspace({
   const [imapPort, setImapPort] = useState("993");
   const [imapUser, setImapUser] = useState("");
   const [imapPass, setImapPass] = useState("");
+  const [imapConnecting, setImapConnecting] = useState(false);
+  const [mailboxStatus, setMailboxStatus] = useState<MailboxStatus>(null);
+  const [syncState, setSyncState] = useState<SyncState>("idle");
+  const [syncSummary, setSyncSummary] = useState("");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
   const [drafts, setDrafts] = useState(0);
@@ -168,6 +188,24 @@ export default function StandingWorkspace({
 
   useEffect(() => {
     let active = true;
+
+    fetch("/api/workspace/mailbox/status", { cache: "no-store" })
+      .then(async (res) => {
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          accounts: MailboxAccount[];
+          cursors: Array<{ syncedAt: string; folderId: number }>;
+        };
+        if (!active) return;
+        const account = data.accounts[0] ?? null;
+        if (!account) return;
+        const lastSyncedAt = data.cursors.length
+          ? data.cursors.reduce((latest, c) =>
+              c.syncedAt > latest ? c.syncedAt : latest, data.cursors[0].syncedAt)
+          : null;
+        setMailboxStatus({ account, messageCount: 0, lastSyncedAt });
+      })
+      .catch(() => undefined);
 
     fetch("/api/workspace", { cache: "no-store" })
       .then(async (response) => {
@@ -209,6 +247,56 @@ export default function StandingWorkspace({
       active = false;
     };
   }, []);
+
+  const refreshMailboxStatus = async () => {
+    try {
+      const res = await fetch("/api/workspace/mailbox/status", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = (await res.json()) as {
+        accounts: MailboxAccount[];
+        cursors: Array<{ syncedAt: string; folderId: number }>;
+      };
+      const account = data.accounts[0] ?? null;
+      if (!account) return;
+      const lastSyncedAt = data.cursors.length
+        ? data.cursors.reduce((latest, c) =>
+            c.syncedAt > latest ? c.syncedAt : latest, data.cursors[0].syncedAt)
+        : null;
+      setMailboxStatus((prev) => ({ account, messageCount: prev?.messageCount ?? 0, lastSyncedAt }));
+    } catch {
+      // preserve existing connected state on refresh failure
+    }
+  };
+
+  const triggerSync = async () => {
+    if (!mailboxStatus || syncState === "syncing") return;
+    setSyncState("syncing");
+    setToast("Syncing mailbox…");
+    try {
+      const res = await fetch("/api/workspace/mailbox/sync", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ accountId: mailboxStatus.account.id }),
+      });
+      if (!res.ok) {
+        const data = (await res.json()) as { error?: string };
+        setSyncState("failed");
+        setSyncSummary(data.error ?? "Sync failed");
+        setToast(data.error ?? "Sync failed");
+        return;
+      }
+      const data = (await res.json()) as { results: Array<{ folder: string; ingested: number; skipped: number }> };
+      const total = data.results.reduce((n, r) => n + r.ingested, 0);
+      setSyncState("synced");
+      setSyncSummary(`Synced · ${total} new`);
+      setToast(`Sync complete — ${total} new message${total === 1 ? "" : "s"}`);
+      await refreshMailboxStatus();
+    } catch {
+      setSyncState("failed");
+      setSyncSummary("Sync failed · network error");
+      setToast("Sync failed; check network");
+    }
+  };
 
   const visibleThreads = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -385,6 +473,8 @@ export default function StandingWorkspace({
   const connectImap = async (event: FormEvent) => {
     event.preventDefault();
     const port = parseInt(imapPort, 10);
+    setImapConnecting(true);
+    setToast("Connecting to IMAP server…");
     try {
       const res = await fetch("/api/workspace/mailbox/connect", {
         method: "POST",
@@ -396,11 +486,17 @@ export default function StandingWorkspace({
         setToast(data.error ?? "IMAP connection failed");
         return;
       }
+      const data = (await res.json()) as { account: MailboxAccount };
+      setMailboxStatus({ account: data.account, messageCount: 0, lastSyncedAt: null });
+      setSyncState("idle");
       setImapFormOpen(false);
+      setConnectOpen(false);
       setImapPass("");
-      setToast("IMAP account connected — run sync to import mail");
+      setToast("IMAP account connected — sync to import mail");
     } catch {
       setToast("IMAP connect request failed; check network");
+    } finally {
+      setImapConnecting(false);
     }
   };
 
@@ -464,14 +560,39 @@ export default function StandingWorkspace({
 
         <div className="sidebar-spacer" />
 
-        <button className="connect-card" onClick={() => setConnectOpen(true)}>
-          <span className="connection-orb"><span /></span>
-          <span>
-            <strong>Mailbox offline</strong>
-            <small>Connect the first provider</small>
-          </span>
-          <Icon name="chevron-down" size={15} />
-        </button>
+        {mailboxStatus ? (
+          <div className="connect-card connected">
+            <span className="connection-orb connected"><span /></span>
+            <span>
+              <strong>{mailboxStatus.account.username}</strong>
+              <small>
+                {syncState === "syncing" ? "Syncing…"
+                  : syncState === "synced" ? syncSummary
+                  : syncState === "failed" ? syncSummary
+                  : mailboxStatus.lastSyncedAt ? `Last sync ${new Date(mailboxStatus.lastSyncedAt).toLocaleTimeString()}`
+                  : "Connected · not yet synced"}
+              </small>
+            </span>
+            <button
+              className="icon-button"
+              aria-label="Sync mailbox"
+              onClick={triggerSync}
+              disabled={syncState === "syncing"}
+              title="Sync now"
+            >
+              <Icon name="send" size={15} />
+            </button>
+          </div>
+        ) : (
+          <button className="connect-card" onClick={() => setConnectOpen(true)}>
+            <span className="connection-orb"><span /></span>
+            <span>
+              <strong>Mailbox offline</strong>
+              <small>Connect the first provider</small>
+            </span>
+            <Icon name="chevron-down" size={15} />
+          </button>
+        )}
 
         <div className="account-row">
           <span className="account-avatar">{displayName.slice(0, 1).toUpperCase()}</span>
@@ -749,10 +870,13 @@ export default function StandingWorkspace({
                 <span><strong>SES inbound + outbound</strong><small>Best match for the current mail infrastructure</small></span>
                 <em>Recommended</em>
               </button>
-              <button onClick={() => { setConnectOpen(false); setImapFormOpen(true); }}>
+              <button onClick={() => { setConnectOpen(false); setImapFormOpen(true); }} disabled={!!mailboxStatus}>
                 <span className="provider-mark imap">✉</span>
-                <span><strong>Generic Mail — IMAP sync</strong><small>Any IMAP server over TLS (port 993)</small></span>
-                <Icon name="chevron-down" size={15} />
+                <span>
+                  <strong>Generic Mail — IMAP sync</strong>
+                  <small>{mailboxStatus ? `Connected · ${mailboxStatus.account.username}` : "Any IMAP server over TLS (port 993)"}</small>
+                </span>
+                {mailboxStatus ? <Icon name="check" size={15} /> : <Icon name="chevron-down" size={15} />}
               </button>
               <button onClick={() => setToast("Microsoft 365 adapter noted") }>
                 <span className="provider-mark microsoft">M</span>
@@ -847,7 +971,9 @@ export default function StandingWorkspace({
               <button type="button" className="text-button" onClick={() => setImapFormOpen(false)}>
                 Cancel
               </button>
-              <button type="submit" className="quiet-button">Connect</button>
+              <button type="submit" className="quiet-button" disabled={imapConnecting}>
+                {imapConnecting ? "Connecting…" : "Connect"}
+              </button>
             </footer>
           </form>
         </div>

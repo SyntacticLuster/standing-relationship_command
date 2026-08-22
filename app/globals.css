@@ -190,6 +190,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, a:focus-visib
   white-space: nowrap;
 }
 .connect-card > svg { color: #5e6458; }
+.connect-card.connected { cursor: default; }
+.connect-card.connected:hover { border-color: var(--border-soft); background: rgba(255,255,255,0.018); }
+.connection-orb.connected::before, .connection-orb.connected::after { display: none; }
+.connection-orb.connected span { background: #6abf69; }
 .connection-orb {
   position: relative;
   display: grid;

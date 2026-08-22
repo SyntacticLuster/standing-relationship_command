@@ -56,13 +56,12 @@ export class ImapProvider implements MailProvider {
       tls: {
         rejectUnauthorized: config.tls, // true = verify cert
       },
+      socketTimeout: 20000,
     });
   }
 
   async validateConnection(): Promise<void> {
     await this.client.connect();
-    // Immediately verify we can list — confirms auth and read access
-    await this.client.list();
   }
 
   async discoverFolders(): Promise<DiscoveredFolder[]> {
