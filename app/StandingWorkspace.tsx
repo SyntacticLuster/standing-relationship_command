@@ -151,6 +151,11 @@ export default function StandingWorkspace({
   const [selectedContactId, setSelectedContactId] = useState(contacts[0].id);
   const [composeOpen, setComposeOpen] = useState(false);
   const [connectOpen, setConnectOpen] = useState(false);
+  const [imapFormOpen, setImapFormOpen] = useState(false);
+  const [imapHost, setImapHost] = useState("");
+  const [imapPort, setImapPort] = useState("993");
+  const [imapUser, setImapUser] = useState("");
+  const [imapPass, setImapPass] = useState("");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
   const [drafts, setDrafts] = useState(0);
@@ -377,6 +382,28 @@ export default function StandingWorkspace({
     }
   };
 
+  const connectImap = async (event: FormEvent) => {
+    event.preventDefault();
+    const port = parseInt(imapPort, 10);
+    try {
+      const res = await fetch("/api/workspace/mailbox/connect", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ host: imapHost, port, username: imapUser, password: imapPass }),
+      });
+      if (!res.ok) {
+        const data = (await res.json()) as { error?: string };
+        setToast(data.error ?? "IMAP connection failed");
+        return;
+      }
+      setImapFormOpen(false);
+      setImapPass("");
+      setToast("IMAP account connected — run sync to import mail");
+    } catch {
+      setToast("IMAP connect request failed; check network");
+    }
+  };
+
   const selectView = (next: WorkspaceView) => {
     setView(next);
     setFilter("all");
@@ -389,14 +416,7 @@ export default function StandingWorkspace({
     <main className="signal-shell">
       <aside className={`sidebar ${mobileNavOpen ? "sidebar-open" : ""}`}>
         <div className="brand-lockup">
-          <div className="brand-mark" aria-hidden="true">
-            <span />
-            <span />
-          </div>
-          <div>
-            <strong>Standing</strong>
-            <small>relationship command</small>
-          </div>
+          <img src="/standing_man_logo.png" alt="Standing" className="brand-logo" />
           <button
             className="icon-button sidebar-close"
             aria-label="Close navigation"
@@ -729,6 +749,11 @@ export default function StandingWorkspace({
                 <span><strong>SES inbound + outbound</strong><small>Best match for the current mail infrastructure</small></span>
                 <em>Recommended</em>
               </button>
+              <button onClick={() => { setConnectOpen(false); setImapFormOpen(true); }}>
+                <span className="provider-mark imap">✉</span>
+                <span><strong>Generic Mail — IMAP sync</strong><small>Any IMAP server over TLS (port 993)</small></span>
+                <Icon name="chevron-down" size={15} />
+              </button>
               <button onClick={() => setToast("Microsoft 365 adapter noted") }>
                 <span className="provider-mark microsoft">M</span>
                 <span><strong>Microsoft 365</strong><small>Graph-based mail and contact sync</small></span>
@@ -744,6 +769,87 @@ export default function StandingWorkspace({
               No provider is connected in this review build. Nothing here can send, delete, or mutate external mail.
             </footer>
           </section>
+        </div>
+      )}
+      {imapFormOpen && (
+        <div className="modal-layer" role="presentation">
+          <button
+            className="modal-backdrop"
+            aria-label="Close IMAP form"
+            onClick={() => setImapFormOpen(false)}
+          />
+          <form
+            className="compose-modal"
+            onSubmit={connectImap}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="imap-form-title"
+          >
+            <header>
+              <div>
+                <p>Generic Mail</p>
+                <h2 id="imap-form-title">Connect IMAP account</h2>
+              </div>
+              <button
+                type="button"
+                className="icon-button"
+                aria-label="Close"
+                onClick={() => setImapFormOpen(false)}
+              >
+                <Icon name="close" />
+              </button>
+            </header>
+            <label>
+              <span>IMAP host</span>
+              <input
+                value={imapHost}
+                onChange={(e) => setImapHost(e.target.value)}
+                placeholder="imap.example.com"
+                required
+                autoComplete="off"
+              />
+            </label>
+            <label>
+              <span>Port</span>
+              <input
+                value={imapPort}
+                onChange={(e) => setImapPort(e.target.value)}
+                placeholder="993"
+                required
+              />
+            </label>
+            <label>
+              <span>Username</span>
+              <input
+                value={imapUser}
+                onChange={(e) => setImapUser(e.target.value)}
+                placeholder="you@example.com"
+                required
+                autoComplete="username"
+              />
+            </label>
+            <label>
+              <span>Password / app password</span>
+              <input
+                type="password"
+                value={imapPass}
+                onChange={(e) => setImapPass(e.target.value)}
+                placeholder="••••••••"
+                required
+                autoComplete="current-password"
+              />
+            </label>
+            <div className="compose-context">
+              <Icon name="spark" size={16} />
+              <span>TLS only. Credentials are encrypted server-side and never returned to the browser.</span>
+            </div>
+            <footer>
+              <button type="button" className="text-button" onClick={() => setImapFormOpen(false)}>
+                Cancel
+              </button>
+              <button type="submit" className="quiet-button">Connect</button>
+            </footer>
+          </form>
         </div>
       )}
     </main>
