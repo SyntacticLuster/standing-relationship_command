@@ -1,6 +1,7 @@
 "use client";
 
-import React, { FormEvent, useEffect, useMemo, useState } from "react";
+import React, { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { contacts, initialThreads, type Contact, type Thread } from "./signal-data";
 
 type MailSection =
@@ -196,6 +197,8 @@ export default function StandingWorkspace({
   const [toast, setToast] = useState("Loading private workspace state…");
   const [editContactOpen, setEditContactOpen] = useState(false);
   const [editNoteDraft, setEditNoteDraft] = useState("");
+  const syncingRef = useRef(false);
+  const router = useRouter();
 
   useEffect(() => {
     let active = true;
@@ -309,32 +312,72 @@ export default function StandingWorkspace({
   };
 
   const triggerSync = async () => {
-    if (!mailboxStatus || syncState === "syncing") return;
+    if (syncingRef.current) return;
+    // Fetch current status to get all owned accounts
+    let accounts: MailboxAccount[] = [];
+    try {
+      const statusRes = await fetch("/api/workspace/mailbox/status", { cache: "no-store" });
+      if (statusRes.ok) {
+        const d = (await statusRes.json()) as { accounts: MailboxAccount[]; cursors: Array<{ syncedAt: string; folderId: number }> };
+        accounts = d.accounts;
+        const account = d.accounts[0] ?? null;
+        if (account) {
+          const lastSyncedAt = d.cursors.length
+            ? d.cursors.reduce((latest, c) => c.syncedAt > latest ? c.syncedAt : latest, d.cursors[0].syncedAt)
+            : null;
+          setMailboxStatus({ account, messageCount: 0, lastSyncedAt });
+        }
+      }
+    } catch {
+      // proceed with existing mailboxStatus
+      if (mailboxStatus) accounts = [mailboxStatus.account];
+    }
+    if (!accounts.length) return;
+    syncingRef.current = true;
     setSyncState("syncing");
     setToast("Syncing mailbox…");
     try {
-      const res = await fetch("/api/workspace/mailbox/sync", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ accountId: mailboxStatus.account.id }),
-      });
-      if (!res.ok) {
-        const data = (await res.json()) as { error?: string };
+      const results = await Promise.allSettled(
+        accounts.map((acct) =>
+          fetch("/api/workspace/mailbox/sync", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ accountId: acct.id }),
+          }).then(async (res) => {
+            if (!res.ok) {
+              const d = (await res.json()) as { error?: string };
+              throw new Error(d.error ?? "Sync failed");
+            }
+            return (await res.json()) as { results: Array<{ folder: string; ingested: number; skipped: number }> };
+          }),
+        ),
+      );
+      const failures = results.filter((r) => r.status === "rejected");
+      const total = results
+        .filter((r): r is PromiseFulfilledResult<{ results: Array<{ folder: string; ingested: number; skipped: number }> }> => r.status === "fulfilled")
+        .reduce((n, r) => n + r.value.results.reduce((m, f) => m + f.ingested, 0), 0);
+      if (failures.length && results.length === failures.length) {
         setSyncState("failed");
-        setSyncSummary(data.error ?? "Sync failed");
-        setToast(data.error ?? "Sync failed");
-        return;
+        const msg = failures[0].status === "rejected" && failures[0].reason instanceof Error
+          ? failures[0].reason.message : "Sync failed";
+        setSyncSummary(msg);
+        setToast(msg);
+      } else if (failures.length) {
+        setSyncState("failed");
+        setSyncSummary(`Partial failure · ${failures.length} account${failures.length > 1 ? "s" : ""} failed`);
+        setToast(`Partial sync — ${total} new, ${failures.length} account${failures.length > 1 ? "s" : ""} failed`);
+      } else {
+        setSyncState("synced");
+        setSyncSummary(`Synced · ${total} new`);
+        setToast(`Sync complete — ${total} new message${total === 1 ? "" : "s"}`);
       }
-      const data = (await res.json()) as { results: Array<{ folder: string; ingested: number; skipped: number }> };
-      const total = data.results.reduce((n, r) => n + r.ingested, 0);
-      setSyncState("synced");
-      setSyncSummary(`Synced · ${total} new`);
-      setToast(`Sync complete — ${total} new message${total === 1 ? "" : "s"}`);
       await refreshMailboxStatus();
     } catch {
       setSyncState("failed");
       setSyncSummary("Sync failed · network error");
       setToast("Sync failed; check network");
+    } finally {
+      syncingRef.current = false;
     }
   };
 
@@ -661,7 +704,7 @@ export default function StandingWorkspace({
         <div className="sidebar-spacer" />
 
         {mailboxStatus ? (
-          <div className="connect-card connected">
+          <button className="connect-card connected" onClick={() => router.push("/settings")} title="Manage connections">
             <span className="connection-orb connected"><span /></span>
             <span>
               <strong>{mailboxStatus.account.username}</strong>
@@ -673,16 +716,7 @@ export default function StandingWorkspace({
                   : "Connected · not yet synced"}
               </small>
             </span>
-            <button
-              className="icon-button"
-              aria-label="Sync mailbox"
-              onClick={triggerSync}
-              disabled={syncState === "syncing"}
-              title="Sync now"
-            >
-              <Icon name="send" size={15} />
-            </button>
-          </div>
+          </button>
         ) : (
           <button className="connect-card" onClick={() => setConnectOpen(true)}>
             <span className="connection-orb"><span /></span>
@@ -703,7 +737,7 @@ export default function StandingWorkspace({
           <button
             className="icon-button"
             aria-label="Settings"
-            onClick={() => setToast("Settings are not wired in this slice")}
+            onClick={() => router.push("/settings")}
           >
             <Icon name="settings" size={17} />
           </button>
@@ -747,17 +781,11 @@ export default function StandingWorkspace({
             })()}
           </div>
           <div className="topbar-end">
-            {mailboxStatus && (
-              <span className={`sync-badge ${syncState === "syncing" ? "syncing" : syncState === "failed" ? "failed" : "ok"}` }>
-                <span />
-                {syncState === "syncing" ? "SYNCING…"
-                  : syncState === "synced" ? `SYNCED`
-                  : syncState === "failed" ? "SYNC FAILED"
-                  : mailboxStatus.lastSyncedAt
-                    ? `SYNCED ${Math.round((Date.now() - new Date(mailboxStatus.lastSyncedAt).getTime()) / 60000)}m AGO`
-                    : "CONNECTED"}
-              </span>
-            )}
+            <SyncControl
+              syncState={mailboxStatus ? syncState : "idle"}
+              hasMailbox={!!mailboxStatus}
+              onSync={triggerSync}
+            />
             <button className="compact-compose" onClick={openNewMessage}>
               <Icon name="compose" size={17} />
             </button>
@@ -1882,5 +1910,45 @@ function ContactDetail({
         <div><span>{notes.length} session notes</span><button type="submit" disabled={!noteDraft.trim()}>Add note</button></div>
       </form>
     </div>
+  );
+}
+
+function SyncControl({
+  syncState,
+  hasMailbox,
+  onSync,
+}: {
+  syncState: SyncState;
+  hasMailbox: boolean;
+  onSync: () => void;
+}) {
+  const syncing = syncState === "syncing";
+  const label =
+    !hasMailbox ? "No mailbox connected"
+    : syncing ? "Syncing…"
+    : syncState === "failed" ? "Sync error — click to retry"
+    : "Sync mailboxes now";
+
+  const stateClass =
+    !hasMailbox ? "no-mailbox"
+    : syncing ? "syncing"
+    : syncState === "failed" ? "failed"
+    : syncState === "synced" ? "synced"
+    : "idle";
+
+  return (
+    <button
+      className={`sync-indicator sync-indicator-${stateClass}`}
+      aria-label={label}
+      title={label}
+      onClick={onSync}
+      disabled={!hasMailbox || syncing}
+    >
+      <svg className="sync-ring" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
+        <path d="M8 2 A6 6 0 1 1 2.8 11.5" />
+        <path d="M8 2 l1.4 1.6 M8 2 l-1.4 1.6" />
+      </svg>
+      <span className="sync-dot" aria-hidden="true" />
+    </button>
   );
 }

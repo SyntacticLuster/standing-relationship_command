@@ -729,3 +729,199 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, a:focus-visib
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; }
 }
+
+/* ── Sync control ───────────────────────────────────────────────────────────── */
+.sync-indicator {
+  position: relative;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  flex: 0 0 18px;
+}
+.sync-indicator:disabled { cursor: default; }
+.sync-ring {
+  position: absolute;
+  inset: 1px;
+  width: 16px;
+  height: 16px;
+  color: #3e4a38;
+  transition: color 150ms ease;
+}
+.sync-indicator:hover:not(:disabled) .sync-ring { color: #5a6e52; }
+.sync-dot {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  inset: 6px;
+  background: #6abf69;
+  transition: background 150ms ease;
+}
+.sync-indicator-synced .sync-dot,
+.sync-indicator-idle .sync-dot  { background: #6abf69; }
+.sync-indicator-syncing .sync-dot { background: #6abf69; }
+.sync-indicator-failed .sync-dot  { background: var(--danger); }
+.sync-indicator-failed .sync-ring { color: var(--danger); opacity: 0.6; }
+.sync-indicator-no-mailbox .sync-dot { background: #3a4035; }
+.sync-indicator-no-mailbox .sync-ring { color: #2a2f26; }
+@keyframes spin-cw { to { transform: rotate(360deg); } }
+.sync-indicator-syncing .sync-ring { animation: spin-cw 0.8s linear infinite; }
+
+/* ── Settings page ──────────────────────────────────────────────────────────── */
+.settings-shell {
+  display: flex;
+  min-height: 100dvh;
+  flex-direction: column;
+  background: var(--canvas);
+  color: var(--ink);
+}
+.settings-header {
+  display: flex;
+  align-items: flex-end;
+  gap: 18px;
+  padding: 28px 40px 22px;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--sidebar);
+}
+.settings-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 640;
+  text-decoration: none;
+  transition: 140ms ease;
+  margin-bottom: 4px;
+}
+.settings-back:hover { border-color: #3a4033; color: var(--ink-soft); }
+.settings-eyebrow {
+  margin: 0 0 4px;
+  color: var(--lime);
+  font-size: 7px;
+  font-weight: 760;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+.settings-header h1 {
+  margin: 0;
+  color: #f5f7ef;
+  font-size: 26px;
+  font-weight: 680;
+  letter-spacing: -0.04em;
+}
+.settings-body {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  max-width: 640px;
+  padding: 36px 40px 80px;
+}
+.settings-section h2 {
+  margin: 0 0 12px;
+  color: #aeb4a8;
+  font-size: 8px;
+  font-weight: 760;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.settings-card {
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #141711;
+}
+.settings-identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.settings-avatar {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  place-items: center;
+  border: 1px solid #3a4033;
+  border-radius: 10px;
+  background: #20241c;
+  color: var(--lime);
+  font-size: 12px;
+  font-weight: 760;
+}
+.settings-identity strong { color: var(--ink-soft); font-size: 11px; font-weight: 670; }
+.settings-identity small { display: block; margin-top: 3px; color: var(--muted-2); font-size: 9px; }
+.settings-loading { margin: 0; color: var(--muted-2); font-size: 9px; }
+.settings-empty-connections {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.settings-empty-connections p { margin: 0; color: var(--muted-2); font-size: 9px; }
+.settings-mailbox-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.settings-mailbox-row:last-of-type { margin-bottom: 0; }
+.settings-mailbox-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.settings-orb {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border-radius: 50%;
+  background: #4a5045;
+}
+.settings-orb.active { background: #6abf69; }
+.settings-orb.error { background: var(--danger); }
+.settings-mailbox-info strong { color: var(--ink-soft); font-size: 10px; font-weight: 670; }
+.settings-mailbox-info small { display: block; margin-top: 2px; color: var(--muted-2); font-size: 8px; }
+.settings-add-btn {
+  display: inline-flex;
+  height: 30px;
+  align-items: center;
+  padding: 0 11px;
+  border: 1px solid var(--lime-border);
+  border-radius: 8px;
+  background: var(--lime-soft);
+  color: var(--lime);
+  font-size: 9px;
+  font-weight: 660;
+  white-space: nowrap;
+  transition: 140ms ease;
+}
+.settings-add-btn:hover { background: rgba(201, 247, 96, 0.16); }
+.settings-add-btn-inline { margin-top: 12px; }
+.settings-edit-btn {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 620;
+  white-space: nowrap;
+  transition: 130ms ease;
+  flex: 0 0 auto;
+}
+.settings-edit-btn:hover { border-color: #3a4033; color: var(--ink-soft); }
+
+/* connected mailbox card is now a navigation button */
+.connect-card.connected { cursor: pointer; }
+.connect-card.connected:hover { border-color: #34392e; background: rgba(255,255,255,0.032); }
