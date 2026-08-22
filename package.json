@@ -1,5 +1,5 @@
 {
-  "name": "signalsuite",
+  "name": "standing",
   "version": "0.1.0",
   "private": true,
   "engines": {
@@ -39,5 +39,5 @@
     "wrangler": "4.92.0"
   },
   "type": "module",
-  "displayName": "SignalSuite"
+  "displayName": "Standing"
 }

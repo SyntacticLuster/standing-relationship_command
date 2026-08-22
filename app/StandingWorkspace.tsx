@@ -136,7 +136,7 @@ function sectionTitle(view: WorkspaceView) {
   return names[view];
 }
 
-export default function SignalWorkspace({
+export default function StandingWorkspace({
   displayName,
   email,
 }: {
@@ -394,7 +394,7 @@ export default function SignalWorkspace({
             <span />
           </div>
           <div>
-            <strong>SignalSuite</strong>
+            <strong>Standing</strong>
             <small>relationship command</small>
           </div>
           <button
@@ -679,7 +679,7 @@ export default function SignalWorkspace({
             <textarea
               value={draftBody}
               onChange={(event) => setDraftBody(event.target.value)}
-              placeholder="Write with context. SignalSuite will eventually surface the useful bits before you hit send."
+              placeholder="Write with context. Standing will eventually surface the useful bits before you hit send."
               aria-label="Message body"
             />
             <div className="compose-context">

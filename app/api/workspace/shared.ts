@@ -17,10 +17,10 @@ export function routeError(error: unknown): Response {
 
   if (combined.includes("no such table")) {
     return Response.json(
-      { error: "SignalSuite storage has not finished provisioning." },
+      { error: "Standing storage has not finished provisioning." },
       { status: 503 },
     );
   }
 
-  return Response.json({ error: "SignalSuite could not persist this change." }, { status: 500 });
+  return Response.json({ error: "Standing could not persist this change." }, { status: 500 });
 }
