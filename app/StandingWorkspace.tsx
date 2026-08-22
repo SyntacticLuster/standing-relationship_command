@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import React, { FormEvent, useEffect, useMemo, useState } from "react";
 import { contacts, initialThreads, type Contact, type Thread } from "./signal-data";
 
 type MailSection =
@@ -47,6 +47,8 @@ type IconName =
   | "close"
   | "compose"
   | "contact"
+  | "copy"
+  | "edit"
   | "inbox"
   | "link"
   | "mail"
@@ -62,13 +64,16 @@ type IconName =
   | "user"
   | "waiting";
 
-const navItems: { id: WorkspaceView; label: string; icon: IconName }[] = [
+const relationshipNavItems: { id: WorkspaceView; label: string; icon: IconName }[] = [
   { id: "priority", label: "Priority", icon: "bolt" },
+  { id: "contacts", label: "Contacts", icon: "contact" },
+];
+
+const workspaceNavItems: { id: WorkspaceView; label: string; icon: IconName }[] = [
   { id: "inbox", label: "Inbox", icon: "inbox" },
   { id: "waiting", label: "Waiting", icon: "waiting" },
   { id: "snoozed", label: "Snoozed", icon: "clock" },
   { id: "archived", label: "Archive", icon: "archive" },
-  { id: "contacts", label: "Contacts", icon: "contact" },
 ];
 
 const filterItems: { id: ThreadFilter; label: string }[] = [
@@ -105,6 +110,8 @@ function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
     link: <><path d="m9.5 14.5 5-5" /><path d="M7.5 16.5 6 18a3.5 3.5 0 0 1-5-5l3-3a3.5 3.5 0 0 1 5 0M16.5 7.5 18 6a3.5 3.5 0 0 1 5 5l-3 3a3.5 3.5 0 0 1-5 0" /></>,
     mail: <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m4 7 8 6 8-6" /></>,
     menu: <><path d="M5 7h14M5 12h14M5 17h14" /></>,
+    copy: <><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></>,
+    edit: <><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="m18.5 2.5 2 2L12 13l-3 1 1-3z" /></>,
     more: <><circle cx="5" cy="12" r="1" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none" /><circle cx="19" cy="12" r="1" fill="currentColor" stroke="none" /></>,
     note: <><path d="M5 3.5h14v17H5z" /><path d="M8 8h8M8 12h8M8 16h5" /></>,
     reply: <><path d="m10 8-5 4 5 4" /><path d="M5 12h8c4 0 6 2 6 6" /></>,
@@ -185,6 +192,8 @@ export default function StandingWorkspace({
   const [noteDraft, setNoteDraft] = useState("");
   const [contactNotes, setContactNotes] = useState<Record<string, string[]>>({});
   const [toast, setToast] = useState("Loading private workspace state…");
+  const [editContactOpen, setEditContactOpen] = useState(false);
+  const [editNoteDraft, setEditNoteDraft] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -470,6 +479,52 @@ export default function StandingWorkspace({
     }
   };
 
+  const persistNote = async (contactId: string, note: string) => {
+    const response = await fetch("/api/workspace/notes", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ contactId, body: note }),
+    });
+    if (!response.ok) throw new Error(`note ${response.status}`);
+  };
+
+  const archiveContact = (contact: Contact) => {
+    const contactThreads = threads.filter((t) => t.contactId === contact.id && t.state !== "archived");
+    if (!contactThreads.length) {
+      setToast(`No active threads to archive for ${contact.name}`);
+      return;
+    }
+    contactThreads.forEach((thread) => commitThread(thread, { state: "archived", unread: false }));
+    setToast(`${contact.name}’s threads archived`);
+  };
+
+  const copyContactEmail = async (email: string) => {
+    try {
+      await navigator.clipboard.writeText(email);
+      setToast(`Copied ${email}`);
+    } catch {
+      setToast("Clipboard unavailable — copy manually: " + email);
+    }
+  };
+
+  const saveEditNote = async (event: FormEvent) => {
+    event.preventDefault();
+    const note = editNoteDraft.trim();
+    if (!note) return;
+    setContactNotes((current) => ({
+      ...current,
+      [selectedContact.id]: [...(current[selectedContact.id] ?? []), note],
+    }));
+    setEditNoteDraft("");
+    setEditContactOpen(false);
+    try {
+      await persistNote(selectedContact.id, note);
+      setToast(`Note added to ${selectedContact.name}`);
+    } catch {
+      setToast("Note kept in this session; durable sync is unavailable");
+    }
+  };
+
   const connectImap = async (event: FormEvent) => {
     event.preventDefault();
     const port = parseInt(imapPort, 10);
@@ -522,15 +577,20 @@ export default function StandingWorkspace({
           </button>
         </div>
 
-        <button className="compose-button" onClick={openNewMessage}>
-          <Icon name="compose" />
-          <span>Compose</span>
-          <kbd>C</kbd>
-        </button>
+        <label className="nav-search">
+          <Icon name="search" size={14} />
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search people, threads…"
+            aria-label="Search people, threads, and facts"
+          />
+          <kbd>⌘K</kbd>
+        </label>
 
-        <nav className="primary-nav" aria-label="Mailbox">
-          <p className="nav-label">Workspace</p>
-          {navItems.slice(0, 5).map((item) => (
+        <nav className="primary-nav" aria-label="Standing workspace">
+          <p className="nav-label">Relationships</p>
+          {relationshipNavItems.map((item) => (
             <button
               key={item.id}
               className={view === item.id ? "active" : ""}
@@ -541,22 +601,31 @@ export default function StandingWorkspace({
               <small>{counts[item.id]}</small>
             </button>
           ))}
-
-          <p className="nav-label nav-label-spaced">Relationships</p>
-          <button
-            className={view === "contacts" ? "active" : ""}
-            onClick={() => selectView("contacts")}
-          >
-            <Icon name="contact" />
-            <span>Contacts</span>
-            <small>{counts.contacts}</small>
-          </button>
           <button onClick={() => setToast("Signals view is queued after live ingestion")}>
             <Icon name="spark" />
             <span>Signals</span>
             <em>soon</em>
           </button>
+
+          <p className="nav-label nav-label-spaced">Workspace</p>
+          {workspaceNavItems.map((item) => (
+            <button
+              key={item.id}
+              className={view === item.id ? "active" : ""}
+              onClick={() => selectView(item.id)}
+            >
+              <Icon name={item.icon} />
+              <span>{item.label}</span>
+              <small>{counts[item.id]}</small>
+            </button>
+          ))}
         </nav>
+
+        <button className="compose-button" onClick={openNewMessage}>
+          <Icon name="compose" />
+          <span>Compose</span>
+          <kbd>C</kbd>
+        </button>
 
         <div className="sidebar-spacer" />
 
@@ -627,25 +696,39 @@ export default function StandingWorkspace({
           >
             <Icon name="menu" />
           </button>
-          <label className="global-search">
-            <Icon name="search" size={17} />
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search people, threads, facts…"
-              aria-label="Search people, threads, and facts"
-            />
-            <kbd>⌘ K</kbd>
-          </label>
-          <div className="topbar-actions">
-            <span className="review-state"><span /> Example workspace</span>
-            <button className="quiet-button" onClick={() => setConnectOpen(true)}>
-              <Icon name="link" size={16} />
-              Connect mailbox
-            </button>
+          <div className="signal-strip">
+            <span className="signal-strip-date">TODAY</span>
+            {counts.priority > 0 && (
+              <span className="signal-chip attention">
+                {counts.priority} NEED ATTENTION
+              </span>
+            )}
+            {counts.waiting > 0 && (
+              <span className="signal-chip">
+                {counts.waiting} WAITING
+              </span>
+            )}
+            {(() => {
+              const loops = contacts.reduce((n, c) => n + c.openLoops.length, 0);
+              return loops > 0 ? (
+                <span className="signal-chip">{loops} OPEN LOOPS</span>
+              ) : null;
+            })()}
+          </div>
+          <div className="topbar-end">
+            {mailboxStatus && (
+              <span className={`sync-badge ${syncState === "syncing" ? "syncing" : syncState === "failed" ? "failed" : "ok"}` }>
+                <span />
+                {syncState === "syncing" ? "SYNCING…"
+                  : syncState === "synced" ? `SYNCED`
+                  : syncState === "failed" ? "SYNC FAILED"
+                  : mailboxStatus.lastSyncedAt
+                    ? `SYNCED ${Math.round((Date.now() - new Date(mailboxStatus.lastSyncedAt).getTime()) / 60000)}m AGO`
+                    : "CONNECTED"}
+              </span>
+            )}
             <button className="compact-compose" onClick={openNewMessage}>
               <Icon name="compose" size={17} />
-              Compose
             </button>
           </div>
         </header>
@@ -766,6 +849,16 @@ export default function StandingWorkspace({
                 setSelectedContactId(selectedContact.id);
                 setView("contacts");
               }}
+              onEditContact={() => {
+                setEditNoteDraft("");
+                setEditContactOpen(true);
+              }}
+              onAddNote={() => {
+                setEditNoteDraft("");
+                setEditContactOpen(true);
+              }}
+              onArchiveContact={() => archiveContact(selectedContact)}
+              onCopyEmail={() => copyContactEmail(selectedContact.email)}
             />
           </aside>
         </div>
@@ -978,6 +1071,68 @@ export default function StandingWorkspace({
           </form>
         </div>
       )}
+
+      {editContactOpen && (
+        <div className="modal-layer" role="presentation">
+          <button
+            className="modal-backdrop"
+            aria-label="Close edit relationship window"
+            onClick={() => setEditContactOpen(false)}
+          />
+          <form
+            className="compose-modal edit-relationship-modal"
+            onSubmit={saveEditNote}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="edit-relationship-title"
+          >
+            <header>
+              <div>
+                <p>User-authored memory</p>
+                <h2 id="edit-relationship-title">Edit relationship — {selectedContact.name}</h2>
+              </div>
+              <button
+                type="button"
+                className="icon-button"
+                aria-label="Close"
+                onClick={() => setEditContactOpen(false)}
+              >
+                <Icon name="close" />
+              </button>
+            </header>
+            <div className="edit-relationship-facts">
+              <p className="edit-relationship-provenance">
+                <Icon name="spark" size={13} />
+                Source-derived facts below are read-only. Only user-authored notes can be added here.
+              </p>
+              <ul>
+                {selectedContact.facts.map((fact) => (
+                  <li key={fact}><span /><p>{fact}</p></li>
+                ))}
+              </ul>
+            </div>
+            <div className="edit-relationship-note-section">
+              <label htmlFor="edit-note-input">Add a private note</label>
+              <textarea
+                id="edit-note-input"
+                value={editNoteDraft}
+                onChange={(e) => setEditNoteDraft(e.target.value)}
+                placeholder={`Add context about ${selectedContact.name.split(" ")[0]}…`}
+                maxLength={2000}
+              />
+              <span className="edit-note-count">{editNoteDraft.length}/2000</span>
+            </div>
+            <footer>
+              <button type="button" className="text-button" onClick={() => setEditContactOpen(false)}>
+                Cancel
+              </button>
+              <button type="submit" className="quiet-button" disabled={!editNoteDraft.trim()}>
+                Save note
+              </button>
+            </footer>
+          </form>
+        </div>
+      )}
     </main>
   );
 }
@@ -1091,16 +1246,118 @@ function ThreadDetail({
   );
 }
 
+function RelationshipOverflowMenu({
+  contact,
+  onEdit,
+  onAddNote,
+  onArchive,
+  onCopyEmail,
+}: {
+  contact: Contact;
+  onEdit: () => void;
+  onAddNote: () => void;
+  onArchive: () => void;
+  onCopyEmail: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const menuRef = React.useRef<HTMLDivElement>(null);
+  const triggerRef = React.useRef<HTMLButtonElement>(null);
+
+  // Close on click-away
+  useEffect(() => {
+    if (!open) return;
+    const handler = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  // Close on Escape, return focus to trigger
+  useEffect(() => {
+    if (!open) return;
+    const handler = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [open]);
+
+  const invoke = (action: () => void) => {
+    setOpen(false);
+    action();
+  };
+
+  return (
+    <div className="overflow-menu-anchor" ref={menuRef}>
+      <button
+        ref={triggerRef}
+        className="icon-button"
+        aria-label="More contact actions"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <Icon name="more" />
+      </button>
+
+      {open && (
+        <div className="overflow-menu" role="menu" aria-label={`Actions for ${contact.name}`}>
+          <button role="menuitem" onClick={() => invoke(onEdit)}>
+            <Icon name="edit" size={14} />
+            Edit relationship
+          </button>
+          <button role="menuitem" onClick={() => invoke(onAddNote)}>
+            <Icon name="note" size={14} />
+            Add private note
+          </button>
+          <button
+            role="menuitem"
+            disabled
+            title="Priority signals require a contact state write path — coming in Phase 4"
+            className="overflow-menu-disabled"
+          >
+            <Icon name="bolt" size={14} />
+            Mark as priority
+          </button>
+          <button role="menuitem" onClick={() => invoke(onCopyEmail)}>
+            <Icon name="copy" size={14} />
+            Copy email
+          </button>
+          <div className="overflow-menu-separator" role="separator" />
+          <button role="menuitem" className="overflow-menu-destructive" onClick={() => invoke(onArchive)}>
+            <Icon name="archive" size={14} />
+            Archive relationship
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RelationshipPanel({
   contact,
   thread,
   notes,
   onOpenContact,
+  onEditContact,
+  onAddNote,
+  onArchiveContact,
+  onCopyEmail,
 }: {
   contact: Contact;
   thread?: Thread;
   notes: string[];
   onOpenContact: () => void;
+  onEditContact: () => void;
+  onAddNote: () => void;
+  onArchiveContact: () => void;
+  onCopyEmail: () => void;
 }) {
   return (
     <div className="relationship-panel">
@@ -1110,7 +1367,13 @@ function RelationshipPanel({
           <h3>{contact.name}</h3>
           <p>{contact.role} · {contact.company}</p>
         </div>
-        <button className="icon-button" aria-label="More contact actions"><Icon name="more" /></button>
+        <RelationshipOverflowMenu
+          contact={contact}
+          onEdit={onEditContact}
+          onAddNote={onAddNote}
+          onArchive={onArchiveContact}
+          onCopyEmail={onCopyEmail}
+        />
       </header>
 
       <button className="contact-link" onClick={onOpenContact}>

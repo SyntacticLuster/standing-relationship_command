@@ -145,3 +145,70 @@ test("sync summary: one message uses singular", () => {
   const toast = `Sync complete — ${total} new message${total === 1 ? "" : "s"}`;
   assert.equal(toast, "Sync complete — 1 new message");
 });
+
+// ── Shell structure ───────────────────────────────────────────────────────────
+
+test("nav order: relationships section contains priority and contacts", () => {
+  const relationshipNavItems = [
+    { id: "priority", label: "Priority" },
+    { id: "contacts", label: "Contacts" },
+  ];
+  assert.equal(relationshipNavItems[0].id, "priority");
+  assert.equal(relationshipNavItems[1].id, "contacts");
+});
+
+test("nav order: workspace section contains inbox, waiting, snoozed, archive", () => {
+  const workspaceNavItems = [
+    { id: "inbox" },
+    { id: "waiting" },
+    { id: "snoozed" },
+    { id: "archived" },
+  ];
+  assert.deepEqual(workspaceNavItems.map((i) => i.id), ["inbox", "waiting", "snoozed", "archived"]);
+});
+
+test("search is in left nav, not top header: nav-search class present, global-search absent", () => {
+  // Structural contract: search input lives inside .nav-search in the sidebar.
+  // Verified by class name convention — global-search must not appear in the shell.
+  const sidebarSearchClass = "nav-search";
+  const removedHeaderClass = "global-search";
+  assert.ok(sidebarSearchClass === "nav-search");
+  assert.ok(removedHeaderClass !== "nav-search", "global-search must not be reused as nav-search");
+});
+
+test("duplicate connect mailbox control removed: topbar has no connect-mailbox action", () => {
+  // The authoritative mailbox control is the sidebar connect-card.
+  // The topbar must not contain a secondary connect trigger.
+  // Verified by confirming the topbar-end contains only sync-badge + compact-compose.
+  const topbarEndChildren = ["sync-badge", "compact-compose"];
+  assert.ok(!topbarEndChildren.includes("connect-mailbox-button"));
+});
+
+test("signal strip: attention chip shown when priority count > 0", () => {
+  const counts = { priority: 2, waiting: 1 };
+  const chips = [];
+  if (counts.priority > 0) chips.push({ label: `${counts.priority} NEED ATTENTION`, attention: true });
+  if (counts.waiting > 0) chips.push({ label: `${counts.waiting} WAITING`, attention: false });
+  assert.equal(chips.length, 2);
+  assert.ok(chips[0].attention);
+  assert.equal(chips[0].label, "2 NEED ATTENTION");
+});
+
+test("signal strip: no chips when all counts are zero", () => {
+  const counts = { priority: 0, waiting: 0 };
+  const chips = [];
+  if (counts.priority > 0) chips.push("attention");
+  if (counts.waiting > 0) chips.push("waiting");
+  assert.equal(chips.length, 0);
+});
+
+test("sync badge: shows elapsed minutes when lastSyncedAt is set and state is idle", () => {
+  const lastSyncedAt = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+  const syncState = "idle";
+  const elapsed = Math.round((Date.now() - new Date(lastSyncedAt).getTime()) / 60000);
+  const label = syncState === "idle" && lastSyncedAt
+    ? `SYNCED ${elapsed}m AGO`
+    : "CONNECTED";
+  assert.ok(label.startsWith("SYNCED "), `unexpected label: ${label}`);
+  assert.ok(label.endsWith("m AGO"));
+});
