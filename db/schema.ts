@@ -105,6 +105,7 @@ export const mailboxMessages = pgTable(
     accountId: integer("account_id").notNull(),
     folderId: integer("folder_id").notNull(),
     uid: integer("uid").notNull(),
+    uidValidity: text("uid_validity").notNull().default(""),
     messageId: text("message_id").notNull().default(""),
     inReplyTo: text("in_reply_to").notNull().default(""),
     references: text("references").notNull().default(""),
@@ -121,9 +122,10 @@ export const mailboxMessages = pgTable(
   (table) => [
     index("mailbox_message_owner_idx").on(table.ownerId),
     index("mailbox_message_thread_key_idx").on(table.threadKey),
-    uniqueIndex("mailbox_message_account_folder_uid_idx").on(
+    uniqueIndex("mailbox_message_account_folder_uid_validity_uid_idx").on(
       table.accountId,
       table.folderId,
+      table.uidValidity,
       table.uid,
     ),
   ],

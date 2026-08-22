@@ -13,6 +13,7 @@ export type DiscoveredFolder = {
 
 export type NormalizedMessage = {
   uid: number;
+  uidValidity: string;
   messageId: string;
   inReplyTo: string;
   references: string;

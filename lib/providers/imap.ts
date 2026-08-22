@@ -125,6 +125,7 @@ export class ImapProvider implements MailProvider {
 
         messages.push({
           uid: msg.uid,
+          uidValidity: currentUidValidity,
           messageId,
           inReplyTo,
           references,

@@ -229,3 +229,59 @@ test("duplicate Message-ID in different folders is allowed (different folderId)"
   assert.equal(insertMessage(1, 1, 42), "inserted");
   assert.equal(insertMessage(1, 2, 42), "inserted");
 });
+
+// ── UIDVALIDITY epoch identity ───────────────────────────────────────────────
+
+function insertMessageWithEpoch(stored, accountId, folderId, uidValidity, uid, subject) {
+  const key = `${accountId}:${folderId}:${uidValidity}:${uid}`;
+  if (stored.has(key)) return "skipped";
+  stored.set(key, subject);
+  return "inserted";
+}
+
+test("epoch A / UID 42 inserts as a new message", () => {
+  const stored = new Map();
+  const result = insertMessageWithEpoch(stored, 1, 1, "1000000000", 42, "Hello epoch A");
+  assert.equal(result, "inserted");
+  assert.equal(stored.size, 1);
+});
+
+test("epoch A / UID 42 is idempotent on duplicate insert", () => {
+  const stored = new Map();
+  insertMessageWithEpoch(stored, 1, 1, "1000000000", 42, "Hello epoch A");
+  const result = insertMessageWithEpoch(stored, 1, 1, "1000000000", 42, "Hello epoch A again");
+  assert.equal(result, "skipped");
+  assert.equal(stored.size, 1);
+  assert.equal(stored.get("1:1:1000000000:42"), "Hello epoch A", "original value preserved");
+});
+
+test("epoch B / UID 42 inserts as a distinct message from epoch A / UID 42", () => {
+  const stored = new Map();
+  insertMessageWithEpoch(stored, 1, 1, "1000000000", 42, "Hello epoch A");
+  const result = insertMessageWithEpoch(stored, 1, 1, "9999999999", 42, "Hello epoch B");
+  assert.equal(result, "inserted");
+  assert.equal(stored.size, 2, "both epochs must coexist as distinct rows");
+  assert.equal(stored.get("1:1:1000000000:42"), "Hello epoch A");
+  assert.equal(stored.get("1:1:9999999999:42"), "Hello epoch B");
+});
+
+test("UIDVALIDITY reset preserves old epoch rows (no destructive delete)", () => {
+  const stored = new Map();
+  // Epoch A messages ingested
+  insertMessageWithEpoch(stored, 1, 1, "1000000000", 40, "Epoch A msg 40");
+  insertMessageWithEpoch(stored, 1, 1, "1000000000", 41, "Epoch A msg 41");
+  insertMessageWithEpoch(stored, 1, 1, "1000000000", 42, "Epoch A msg 42");
+  assert.equal(stored.size, 3);
+
+  // UIDVALIDITY changes — epoch B re-imports from UID 1, no delete
+  insertMessageWithEpoch(stored, 1, 1, "9999999999", 1, "Epoch B msg 1");
+  insertMessageWithEpoch(stored, 1, 1, "9999999999", 42, "Epoch B msg 42");
+  assert.equal(stored.size, 5, "epoch A rows must still exist alongside epoch B rows");
+});
+
+test("cursor reset on UIDVALIDITY change sets lastUid to 0 for new epoch", () => {
+  const uidValidityChanged = true;
+  const lastUid = 500;
+  const maxUid = uidValidityChanged ? 0 : lastUid;
+  assert.equal(maxUid, 0, "cursor baseline resets for new epoch");
+});

@@ -69,17 +69,8 @@ export async function syncMailboxAccount(
     const { messages, currentUidValidity, uidValidityChanged } =
       await provider.fetchMessages(folder.name, lastUid, storedUidValidity);
 
-    // If UIDVALIDITY changed, purge stale messages for this folder
-    if (uidValidityChanged) {
-      await db
-        .delete(mailboxMessages)
-        .where(
-          and(
-            eq(mailboxMessages.accountId, accountId),
-            eq(mailboxMessages.folderId, folderRow.id),
-          ),
-        );
-    }
+    // If UIDVALIDITY changed, reset the cursor baseline but preserve old message rows.
+    // Old rows remain distinguishable by their uid_validity value — no data is lost.
 
     let ingested = 0;
     let skipped = 0;
@@ -94,6 +85,7 @@ export async function syncMailboxAccount(
             accountId,
             folderId: folderRow.id,
             uid: msg.uid,
+            uidValidity: msg.uidValidity,
             messageId: msg.messageId,
             inReplyTo: msg.inReplyTo,
             references: msg.references,
