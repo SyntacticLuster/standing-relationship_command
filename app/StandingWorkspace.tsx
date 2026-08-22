@@ -58,6 +58,7 @@ type IconName =
   | "reply"
   | "search"
   | "send"
+  | "refresh"
   | "settings"
   | "spark"
   | "star"
@@ -117,6 +118,7 @@ function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
     reply: <><path d="m10 8-5 4 5 4" /><path d="M5 12h8c4 0 6 2 6 6" /></>,
     search: <><circle cx="10.5" cy="10.5" r="6.5" /><path d="m15.5 15.5 5 5" /></>,
     send: <><path d="m3 4 18 8-18 8 3-8z" /><path d="M6 12h15" /></>,
+    refresh: <><path d="M21 12a9 9 0 1 1-2.1-5.8" /><path d="M21 3v4h-4" /></>,
     settings: <><circle cx="12" cy="12" r="3" /><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1" /></>,
     spark: <><path d="m12 2 1.6 5.4L19 9l-5.4 1.6L12 16l-1.6-5.4L5 9l5.4-1.6z" /><path d="m19 16 .7 2.3L22 19l-2.3.7L19 22l-.7-2.3L16 19l2.3-.7z" /></>,
     star: <path d="m12 3 2.7 5.4 6 .9-4.3 4.2 1 6-5.4-2.9-5.4 2.9 1-6-4.3-4.2 6-.9z" />,
@@ -256,6 +258,35 @@ export default function StandingWorkspace({
       active = false;
     };
   }, []);
+
+  const refreshWorkspace = async () => {
+    try {
+      const response = await fetch("/api/workspace", { cache: "no-store" });
+      if (!response.ok) throw new Error(`workspace state ${response.status}`);
+      const stored = (await response.json()) as StoredWorkspace;
+      const stateByThread = new Map(
+        stored.threadStates.map((state) => [state.threadId, state]),
+      );
+      setThreads((current) =>
+        current.map((thread) => {
+          const saved = stateByThread.get(thread.id);
+          return saved
+            ? { ...thread, state: saved.state, starred: saved.starred, unread: saved.unread }
+            : thread;
+        }),
+      );
+      setContactNotes(
+        stored.contactNotes.reduce<Record<string, string[]>>((all, note) => {
+          all[note.contactId] = [...(all[note.contactId] ?? []), note.body];
+          return all;
+        }, {}),
+      );
+      setDrafts(stored.draftCount);
+      setToast("Priority refreshed");
+    } catch {
+      setToast("Refresh failed; session state preserved");
+    }
+  };
 
   const refreshMailboxStatus = async () => {
     try {
@@ -583,7 +614,7 @@ export default function StandingWorkspace({
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search people, threads…"
-            aria-label="Search people, threads, and facts"
+            aria-label="Search people, threads, facts"
           />
           <kbd>⌘K</kbd>
         </label>
@@ -750,9 +781,23 @@ export default function StandingWorkspace({
                   <p>Correspondence</p>
                   <h1>{sectionTitle(view)}</h1>
                 </div>
-                <button className="icon-button" aria-label="More list actions">
-                  <Icon name="more" />
-                </button>
+                {view === "priority" ? (
+                  <PriorityOverflowMenu
+                    visibleThreads={visibleThreads}
+                    onRefresh={refreshWorkspace}
+                    onReviewSignals={() => setToast("Signals view is queued after live ingestion")}
+                    onMarkVisibleRead={() => {
+                      visibleThreads
+                        .filter((t) => t.unread)
+                        .forEach((t) => commitThread(t, { unread: false }));
+                      setToast("Marked visible as read");
+                    }}
+                  />
+                ) : (
+                  <button className="icon-button" aria-label="More list actions">
+                    <Icon name="more" />
+                  </button>
+                )}
               </div>
 
               <div className="filter-row" role="tablist" aria-label="Thread filters">
@@ -1333,6 +1378,100 @@ function RelationshipOverflowMenu({
           <button role="menuitem" className="overflow-menu-destructive" onClick={() => invoke(onArchive)}>
             <Icon name="archive" size={14} />
             Archive relationship
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PriorityOverflowMenu({
+  visibleThreads,
+  onRefresh,
+  onMarkVisibleRead,
+  onReviewSignals,
+}: {
+  visibleThreads: Thread[];
+  onRefresh: () => void;
+  onMarkVisibleRead: () => void;
+  onReviewSignals: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const menuRef = React.useRef<HTMLDivElement>(null);
+  const triggerRef = React.useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [open]);
+
+  const invoke = (action: () => void) => {
+    setOpen(false);
+    action();
+  };
+
+  const hasUnread = visibleThreads.some((t) => t.unread);
+
+  return (
+    <div className="overflow-menu-anchor" ref={menuRef}>
+      <button
+        ref={triggerRef}
+        className="icon-button"
+        aria-label="Priority actions"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <Icon name="more" />
+      </button>
+
+      {open && (
+        <div className="overflow-menu" role="menu" aria-label="Priority actions">
+          <button role="menuitem" onClick={() => invoke(onRefresh)}>
+            <Icon name="refresh" size={14} />
+            Refresh priority
+          </button>
+          <button
+            role="menuitem"
+            onClick={() => invoke(onMarkVisibleRead)}
+            disabled={!hasUnread}
+            className={!hasUnread ? "overflow-menu-disabled" : ""}
+            title={!hasUnread ? "No unread conversations visible" : undefined}
+          >
+            <Icon name="check" size={14} />
+            Mark visible as read
+          </button>
+          <button role="menuitem" onClick={() => invoke(onReviewSignals)}>
+            <Icon name="spark" size={14} />
+            Review signals
+          </button>
+          <div className="overflow-menu-separator" role="separator" />
+          <button
+            role="menuitem"
+            disabled
+            title="Priority rules are coming in a future release"
+            className="overflow-menu-disabled"
+          >
+            <Icon name="settings" size={14} />
+            Priority rules
           </button>
         </div>
       )}
