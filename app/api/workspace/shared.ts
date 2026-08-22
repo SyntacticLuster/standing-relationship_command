@@ -1,12 +1,14 @@
-export function requireOwner(request: Request): string | Response {
-  const email = request.headers.get("oai-authenticated-user-email")?.trim().toLowerCase();
-  if (!email) {
+import { auth0 } from "../../auth";
+
+export async function requireOwner(): Promise<string | Response> {
+  const session = await auth0.getSession();
+  if (!session) {
     return Response.json(
       { error: "Authenticated workspace identity is required." },
       { status: 401 },
     );
   }
-  return email;
+  return session.user.sub;
 }
 
 export function routeError(error: unknown): Response {
@@ -15,7 +17,7 @@ export function routeError(error: unknown): Response {
     error instanceof Error && error.cause instanceof Error ? error.cause.message : "";
   const combined = `${message}\n${detail}`;
 
-  if (combined.includes("no such table")) {
+  if (combined.includes("relation") && combined.includes("does not exist")) {
     return Response.json(
       { error: "Standing storage has not finished provisioning." },
       { status: 503 },

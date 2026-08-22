@@ -1,10 +1,10 @@
-import { getChatGPTUser } from "./chatgpt-auth";
+import { getUser } from "./auth";
 import StandingWorkspace from "./StandingWorkspace";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  const user = await getChatGPTUser();
+  const user = await getUser();
 
   return (
     <StandingWorkspace

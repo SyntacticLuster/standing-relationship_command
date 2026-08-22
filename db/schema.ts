@@ -1,48 +1,47 @@
-import { sql } from "drizzle-orm";
-import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { boolean, index, pgTable, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
-export const threadStates = sqliteTable(
+export const threadStates = pgTable(
   "thread_states",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
-    ownerEmail: text("owner_email").notNull(),
+    id: serial("id").primaryKey(),
+    ownerId: text("owner_id").notNull(),
     threadId: text("thread_id").notNull(),
     state: text("state").notNull(),
-    starred: integer("starred", { mode: "boolean" }).notNull().default(false),
-    unread: integer("unread", { mode: "boolean" }).notNull().default(false),
-    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    starred: boolean("starred").notNull().default(false),
+    unread: boolean("unread").notNull().default(false),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (table) => [
-    uniqueIndex("thread_state_owner_thread_idx").on(table.ownerEmail, table.threadId),
-    index("thread_state_owner_idx").on(table.ownerEmail),
+    uniqueIndex("thread_state_owner_thread_idx").on(table.ownerId, table.threadId),
+    index("thread_state_owner_idx").on(table.ownerId),
   ],
 );
 
-export const contactNotes = sqliteTable(
+export const contactNotes = pgTable(
   "contact_notes",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
-    ownerEmail: text("owner_email").notNull(),
+    id: serial("id").primaryKey(),
+    ownerId: text("owner_id").notNull(),
     contactId: text("contact_id").notNull(),
     body: text("body").notNull(),
-    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (table) => [
-    index("contact_note_owner_contact_idx").on(table.ownerEmail, table.contactId),
+    index("contact_note_owner_contact_idx").on(table.ownerId, table.contactId),
   ],
 );
 
-export const drafts = sqliteTable(
+export const drafts = pgTable(
   "drafts",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
-    ownerEmail: text("owner_email").notNull(),
+    id: serial("id").primaryKey(),
+    ownerId: text("owner_id").notNull(),
     recipient: text("recipient").notNull().default(""),
     subject: text("subject").notNull().default(""),
     body: text("body").notNull().default(""),
     status: text("status").notNull().default("draft"),
-    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
-  (table) => [index("draft_owner_status_idx").on(table.ownerEmail, table.status)],
+  (table) => [index("draft_owner_status_idx").on(table.ownerId, table.status)],
 );

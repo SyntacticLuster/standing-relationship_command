@@ -5,7 +5,7 @@ import { requireOwner, routeError } from "../shared";
 const validStates = new Set(["inbox", "waiting", "snoozed", "archived"]);
 
 export async function POST(request: Request) {
-  const owner = requireOwner(request);
+  const owner = await requireOwner();
   if (owner instanceof Response) return owner;
 
   try {
@@ -23,12 +23,12 @@ export async function POST(request: Request) {
     }
 
     const values = {
-      ownerEmail: owner,
+      ownerId: owner,
       threadId,
       state,
       starred: Boolean(payload.starred),
       unread: Boolean(payload.unread),
-      updatedAt: new Date().toISOString(),
+      updatedAt: new Date(),
     };
 
     const db = getDb();
@@ -36,7 +36,7 @@ export async function POST(request: Request) {
       .insert(threadStates)
       .values(values)
       .onConflictDoUpdate({
-        target: [threadStates.ownerEmail, threadStates.threadId],
+        target: [threadStates.ownerId, threadStates.threadId],
         set: {
           state: values.state,
           starred: values.starred,

@@ -3,7 +3,7 @@ import { drafts } from "../../../../db/schema";
 import { requireOwner, routeError } from "../shared";
 
 export async function POST(request: Request) {
-  const owner = requireOwner(request);
+  const owner = await requireOwner();
   if (owner instanceof Response) return owner;
 
   try {
@@ -23,7 +23,7 @@ export async function POST(request: Request) {
     const db = getDb();
     const [draft] = await db
       .insert(drafts)
-      .values({ ownerEmail: owner, recipient, subject, body })
+      .values({ ownerId: owner, recipient, subject, body })
       .returning({ id: drafts.id, createdAt: drafts.createdAt });
 
     return Response.json({ draft }, { status: 201 });

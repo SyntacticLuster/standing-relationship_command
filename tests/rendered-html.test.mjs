@@ -1,33 +1,35 @@
 import assert from "node:assert/strict";
-import { access, readFile, readdir } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import test from "node:test";
 
 test("packages the Standing product shell and durable workspace capability", async () => {
-  const serverBundle = await readFile(
-    new URL("../dist/server/index.js", import.meta.url),
-    "utf8",
-  );
-  assert.match(serverBundle, /Standing — Relationship Command/);
-  assert.match(serverBundle, /api\/workspace\/thread-state/);
+  // Layout chunk contains the page title metadata
+  const ssrChunksDir = new URL("../.next/server/chunks/ssr/", import.meta.url);
+  const ssrChunks = await readdir(ssrChunksDir);
 
-  const assetDirectory = new URL("../dist/client/assets/", import.meta.url);
-  const clientAssets = await readdir(assetDirectory);
-  const workspaceAsset = clientAssets.find((name) =>
-    name.startsWith("StandingWorkspace-"),
-  );
-  assert.ok(workspaceAsset, "StandingWorkspace client asset was not emitted");
-  const clientBundle = await readFile(new URL(workspaceAsset, assetDirectory), "utf8");
-  assert.match(clientBundle, /Search people, threads, facts/);
-  assert.match(clientBundle, /Nothing here can send, delete, or mutate external mail/);
+  const layoutChunk = ssrChunks.find((f) => f.startsWith("app_layout_tsx"));
+  assert.ok(layoutChunk, "layout SSR chunk was not emitted");
+  const layoutBundle = await readFile(new URL(layoutChunk, ssrChunksDir), "utf8");
+  assert.match(layoutBundle, /Standing.*Relationship Command|Relationship Command.*Standing/);
 
-  const hosting = JSON.parse(
-    await readFile(new URL("../dist/.openai/hosting.json", import.meta.url), "utf8"),
-  );
-  assert.equal(hosting.d1, "DB");
+  // Workspace component chunk contains the UI strings
+  const workspaceChunk = ssrChunks.find((f) => f.startsWith("app_StandingWorkspace_tsx"));
+  assert.ok(workspaceChunk, "StandingWorkspace SSR chunk was not emitted");
+  const workspaceBundle = await readFile(new URL(workspaceChunk, ssrChunksDir), "utf8");
+  assert.match(workspaceBundle, /Search people, threads, facts/);
+  assert.match(workspaceBundle, /Nothing here can send, delete, or mutate external mail/);
 
-  const migrations = await readdir(
-    new URL("../dist/.openai/drizzle/", import.meta.url),
-  );
-  assert.ok(migrations.some((name) => name.endsWith(".sql")));
-  await access(new URL("../dist/client/og.png", import.meta.url));
+  // Verify the workspace API route directory is present
+  const apiDir = new URL("../.next/server/app/api/workspace/", import.meta.url);
+  const apiFiles = await readdir(apiDir);
+  assert.ok(apiFiles.length > 0, "workspace API routes were not emitted");
+
+  // Verify the health route is present
+  const healthDir = new URL("../.next/server/app/api/health/", import.meta.url);
+  const healthFiles = await readdir(healthDir);
+  assert.ok(healthFiles.some((f) => f.endsWith(".js") || f.endsWith(".rsc")), "health route was not emitted");
+
+  // Verify the PostgreSQL migration exists
+  const migrations = await readdir(new URL("../drizzle/", import.meta.url));
+  assert.ok(migrations.some((name) => name.endsWith(".sql")), "PostgreSQL migration was not found");
 });
