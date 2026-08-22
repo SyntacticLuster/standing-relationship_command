@@ -1,0 +1,20 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: standing
+      POSTGRES_USER: standing
+      POSTGRES_PASSWORD: standing_dev
+    ports:
+      - "5433:5432"
+    volumes:
+      - standing_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U standing -d standing"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  standing_db_data:
