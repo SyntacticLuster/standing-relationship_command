@@ -885,6 +885,12 @@ export default function StandingWorkspace({
                 onSnooze={() => moveThread("snoozed", "Conversation snoozed")}
                 onToggleRead={() => toggleThread("unread")}
                 onToggleStar={() => toggleThread("starred")}
+                onOpenRelationship={() => {
+                  setSelectedContactId(selectedContact.id);
+                  selectView("contacts");
+                }}
+                onMoveToWaiting={() => moveThread("waiting", "Moved to Waiting")}
+                onReturnToInbox={() => moveThread("inbox", "Returned to Inbox")}
               />
             ) : null}
           </section>
@@ -1229,6 +1235,141 @@ function ThreadRow({
   );
 }
 
+function ThreadDetailOverflowMenu({
+  thread,
+  onReply,
+  onOpenRelationship,
+  onToggleRead,
+  onToggleStar,
+  onMoveToWaiting,
+  onReturnToInbox,
+  onSnooze,
+  onArchive,
+}: {
+  thread: Thread;
+  onReply: () => void;
+  onOpenRelationship: () => void;
+  onToggleRead: () => void;
+  onToggleStar: () => void;
+  onMoveToWaiting: () => void;
+  onReturnToInbox: () => void;
+  onSnooze: () => void;
+  onArchive: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const menuRef = React.useRef<HTMLDivElement>(null);
+  const triggerRef = React.useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [open]);
+
+  const invoke = (action: () => void) => {
+    setOpen(false);
+    action();
+  };
+
+  const isSnoozed = thread.state === "snoozed";
+  const isArchived = thread.state === "archived";
+  const isWaiting = thread.state === "waiting";
+
+  return (
+    <div className="overflow-menu-anchor" ref={menuRef}>
+      <button
+        ref={triggerRef}
+        className="icon-button"
+        aria-label="More thread actions"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        title="More actions"
+      >
+        <Icon name="more" size={17} />
+      </button>
+
+      {open && (
+        <div className="overflow-menu" role="menu" aria-label="Thread actions">
+          <button role="menuitem" onClick={() => invoke(onReply)}>
+            <Icon name="reply" size={14} />
+            Reply
+          </button>
+          <button role="menuitem" onClick={() => invoke(onOpenRelationship)}>
+            <Icon name="contact" size={14} />
+            Open relationship
+          </button>
+
+          <div className="overflow-menu-separator" role="separator" />
+
+          <button role="menuitem" onClick={() => invoke(onToggleRead)}>
+            <Icon name="mail" size={14} />
+            {thread.unread ? "Mark as read" : "Mark as unread"}
+          </button>
+          <button role="menuitem" onClick={() => invoke(onToggleStar)}>
+            <Icon name="star" size={14} />
+            {thread.starred ? "Unstar" : "Star"}
+          </button>
+          {!isWaiting && !isArchived && !isSnoozed && (
+            <button role="menuitem" onClick={() => invoke(onMoveToWaiting)}>
+              <Icon name="waiting" size={14} />
+              Move to Waiting
+            </button>
+          )}
+          {isWaiting && (
+            <button role="menuitem" onClick={() => invoke(onReturnToInbox)}>
+              <Icon name="inbox" size={14} />
+              Return to Inbox
+            </button>
+          )}
+          {isSnoozed ? (
+            <button role="menuitem" onClick={() => invoke(onReturnToInbox)}>
+              <Icon name="clock" size={14} />
+              Unsnooze
+            </button>
+          ) : (
+            <button role="menuitem" onClick={() => invoke(onSnooze)}>
+              <Icon name="clock" size={14} />
+              Snooze
+            </button>
+          )}
+
+          <div className="overflow-menu-separator" role="separator" />
+
+          {isArchived ? (
+            <button role="menuitem" onClick={() => invoke(onReturnToInbox)}>
+              <Icon name="inbox" size={14} />
+              Restore to Inbox
+            </button>
+          ) : (
+            <button role="menuitem" className="overflow-menu-destructive" onClick={() => invoke(onArchive)}>
+              <Icon name="archive" size={14} />
+              Archive
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ThreadDetail({
   thread,
   onReply,
@@ -1236,6 +1377,9 @@ function ThreadDetail({
   onSnooze,
   onToggleRead,
   onToggleStar,
+  onOpenRelationship,
+  onMoveToWaiting,
+  onReturnToInbox,
 }: {
   thread: Thread;
   onReply: () => void;
@@ -1243,6 +1387,9 @@ function ThreadDetail({
   onSnooze: () => void;
   onToggleRead: () => void;
   onToggleStar: () => void;
+  onOpenRelationship: () => void;
+  onMoveToWaiting: () => void;
+  onReturnToInbox: () => void;
 }) {
   return (
     <div className="thread-detail">
@@ -1257,7 +1404,17 @@ function ThreadDetail({
           <button onClick={onSnooze} title="Snooze"><Icon name="clock" size={17} /><span>Snooze</span></button>
           <button onClick={onToggleRead} title="Toggle unread"><Icon name="mail" size={17} /><span>Unread</span></button>
           <button onClick={onToggleStar} className={thread.starred ? "active" : ""} title="Star"><Icon name="star" size={17} /></button>
-          <button title="More actions"><Icon name="more" size={17} /></button>
+          <ThreadDetailOverflowMenu
+            thread={thread}
+            onReply={onReply}
+            onOpenRelationship={onOpenRelationship}
+            onToggleRead={onToggleRead}
+            onToggleStar={onToggleStar}
+            onMoveToWaiting={onMoveToWaiting}
+            onReturnToInbox={onReturnToInbox}
+            onSnooze={onSnooze}
+            onArchive={onArchive}
+          />
         </div>
       </header>
 
