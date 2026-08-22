@@ -17,6 +17,7 @@
   "dependencies": {
     "@auth0/nextjs-auth0": "4.27.0",
     "drizzle-orm": "0.45.2",
+    "imapflow": "^1.7.2",
     "next": "16.2.6",
     "pg": "8.13.3",
     "react": "19.2.6",
