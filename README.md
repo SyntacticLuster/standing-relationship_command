@@ -1,107 +1,360 @@
-# vinext-starter
+# Standing™
 
-A clean full-stack starter running on
-[vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
-Drizzle support.
+**Relationship Command**
 
-## Prerequisites
+Standing is a relationship intelligence workspace built to preserve the context,
+commitments, signals, and history that normally disappear across inboxes,
+messages, notes, and human memory.
 
-- Node.js `>=22.13.0`
-- Linux with `flock`, `curl`, and GNU `timeout`
+It is designed around a simple question:
 
-## Sites Lifecycle
+> Where do I stand with this person, and what matters next?
 
-The Sites lifecycle CLI runs the locked dependency install before returning this checkout. Edit the source under `app/`, then checkpoint when a coherent milestone is ready to inspect or share. The remote Sites builder runs `npm run build` against the pushed commit. Do not repeat install or build as a normal pre-checkpoint step.
+Standing treats a relationship as a persistent object rather than a contact
+record. Conversations create state. State becomes memory. Memory informs the
+next interaction.
 
-This starter does not use `wrangler.jsonc`.
+---
 
-`install:ci` is intentionally a single, non-retrying `npm ci`. It refuses a concurrent install for the same project, consumes a matching image-seeded npm cache with `--prefer-offline` while retaining registry fallback for a missing cache object, otherwise downloads and verifies the complete vinext tarball recorded in `package-lock.json`, limits npm to one socket, and terminates a stalled install. `build` applies a short timeout. These helpers target Linux and use GNU `timeout`; they are not native macOS scripts.
+## What Standing Is
 
-Scripts that need writable project-scoped home, npm, XDG, and temporary paths use `scripts/sites-env.sh`. The `dev` and `start` scripts honor the caller's runtime environment and keep Wrangler logs inside the checkout. The generated `.sites-runtime/` directory is disposable and ignored by Git.
+Traditional CRMs are built around records, pipelines, and data entry.
 
-## Included Shape
+Standing is built around relationships.
 
-- edit site code under `app/`
-- `app/chatgpt-auth.ts` provides optional dispatch-owned ChatGPT sign-in helpers
-- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
-- `vite.config.ts` simulates declared bindings for local development
-- `db/index.ts` reads the D1 binding from the Cloudflare Worker environment
-- `db/schema.ts` starts intentionally empty
-- `examples/d1/` contains an optional D1 example surface
-- `drizzle.config.ts` supports local migration generation when needed
+The product is intended to maintain a durable working model of the people you
+interact with, including:
 
-## Workspace Auth Headers
+- relationship state
+- communication history
+- known facts
+- private notes
+- open loops and commitments
+- priority and attention signals
+- drafts and pending correspondence
+- changes in relationship strength over time
 
-OpenAI workspace sites can read the current user's email from
-`oai-authenticated-user-email`.
+The goal is not to create another place where users manually maintain contact
+data.
 
-SIWC-authenticated workspace sites may also receive
-`oai-authenticated-user-full-name` when the user's SIWC profile has a non-empty
-`name` claim. The full-name value is percent-encoded UTF-8 and is accompanied by
-`oai-authenticated-user-full-name-encoding: percent-encoded-utf-8`.
+The goal is to make useful relationship context persistent, retrievable, and
+actionable.
 
-Treat the full name as optional and fall back to email when it is absent:
+---
 
-```tsx
-import { headers } from "next/headers";
+## Product Model
 
-export default async function Home() {
-  const requestHeaders = await headers();
-  const email = requestHeaders.get("oai-authenticated-user-email");
-  const encodedFullName = requestHeaders.get("oai-authenticated-user-full-name");
-  const fullName =
-    encodedFullName &&
-    requestHeaders.get("oai-authenticated-user-full-name-encoding") ===
-      "percent-encoded-utf-8"
-      ? decodeURIComponent(encodedFullName)
-      : null;
+Standing organizes interaction around several core concepts.
 
-  const displayName = fullName ?? email;
-  // ...
-}
+### Contacts
+
+A contact represents a person and the relationship context associated with
+them.
+
+Contacts are intended to accumulate useful context over time rather than act as
+static address-book entries.
+
+### Relationship Memory
+
+Standing preserves information that should matter during future interactions:
+facts, notes, prior context, commitments, and other durable relationship state.
+
+### Thread State
+
+Conversation threads can carry user-specific state such as:
+
+- current workflow state
+- starred status
+- unread status
+
+Thread state is scoped to the authenticated owner.
+
+### Notes
+
+Private contact notes allow users to persist relationship context that may not
+exist in the underlying communication provider.
+
+### Drafts
+
+Draft correspondence is stored as workspace state so unfinished communication
+can remain associated with the authenticated user.
+
+---
+
+## Current Development Status
+
+Standing is under active development.
+
+The current local foundation includes:
+
+- Auth0 authentication
+- authenticated workspace identity
+- PostgreSQL persistence
+- Drizzle migrations
+- owner-scoped workspace data
+- thread state persistence
+- contact notes
+- draft persistence
+- local Docker database infrastructure
+
+Current database tables:
+
+- `thread_states`
+- `contact_notes`
+- `drafts`
+
+This README describes the current development foundation, not the complete
+intended product surface.
+
+---
+
+## Architecture
+
+The local development stack is intentionally isolated.
+
+```text
+Browser
+  │
+  ▼
+Standing
+  │
+  ├── Auth0
+  │     └── authenticated user identity
+  │
+  ├── Workspace API
+  │     └── owner-scoped application state
+  │
+  └── Drizzle
+        │
+        ▼
+     PostgreSQL
 ```
 
-## Optional Dispatch-Owned ChatGPT Sign-In
+Development services do not depend on OrbitSuite infrastructure or databases.
 
-Import the ready-to-use helpers from `app/chatgpt-auth.ts` when the site needs
-optional or required ChatGPT sign-in:
+---
 
-- Use `getChatGPTUser()` for optional signed-in UI.
-- Use `requireChatGPTUser(returnTo)` for server-rendered pages that should send
-  anonymous visitors through Sign in with ChatGPT.
-- Use `chatGPTSignInPath(returnTo)` and `chatGPTSignOutPath(returnTo)` for
-  browser links or actions.
-- Pass a same-origin relative `returnTo` path for the destination after sign-in
-  or sign-out. The helper validates and safely encodes it.
-- Mark protected pages with `export const dynamic = "force-dynamic"` because
-  they depend on per-request identity headers.
+## Local Development
 
-Dispatch owns `/signin-with-chatgpt`, `/signout-with-chatgpt`, `/callback`, the
-OAuth cookies, and identity header injection. Do not implement app routes for
-those reserved paths. Routes that do not import and call the helper remain
-anonymous-compatible.
+### Prerequisites
 
-SIWC establishes identity only; it does not prove workspace membership. Use the
-Sites hosting platform's access policy controls for workspace-wide restrictions,
-or enforce explicit server-side membership or allowlist checks.
+- Node.js
+- npm
+- Docker with Docker Compose
 
-Use SIWC for account pages, user-specific dashboards, saved records, and write
-actions tied to the current ChatGPT user. Leave public content anonymous.
+### 1. Configure environment
 
-## Diagnostic Commands
+Standing expects a local `.env.local`.
 
-- `npm run install:ci`: perform the one bounded lockfile install
-- `npm run dev`: start the Vite/Vinext development server
-- `npm run build`: build the deployable Sites artifact
-- `npm run start`: start the built Vinext application
-- `npm test`: build and verify the rendered development-preview metadata
-- `npm run db:generate`: generate Drizzle migrations after schema changes
+Required configuration includes:
 
-Use build commands for targeted diagnosis after a remote failure, not as part of the normal checkpoint path.
+```env
+AUTH0_SECRET=
+AUTH0_BASE_URL=http://localhost:3001
+AUTH0_ISSUER_BASE_URL=
+AUTH0_CLIENT_ID=
+AUTH0_CLIENT_SECRET=
 
-The timeout defaults can be overridden for a controlled canary with `SITES_INSTALL_TIMEOUT`, `SITES_INSTALL_KILL_AFTER`, `SITES_BUILD_TIMEOUT`, and `SITES_BUILD_KILL_AFTER`. A timeout fails the command; the helpers never retry an unchanged install or build.
+APP_BASE_URL=http://localhost:3001
 
-## Learn More
+DATABASE_URL=postgresql://standing:standing_dev@localhost:5433/standing
+```
 
-- [vinext Documentation](https://github.com/cloudflare/vinext)
-- [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
+Do not commit `.env.local` or authentication credentials.
+
+### 2. Start PostgreSQL
+
+```bash
+docker compose up -d standing-db
+```
+
+Confirm the database is healthy:
+
+```bash
+docker compose ps
+```
+
+The development database is exposed locally on port `5433`.
+
+### 3. Run database migrations
+
+```bash
+npm run db:migrate
+```
+
+Standing uses Drizzle for schema migrations.
+
+Do not manually reproduce schema changes outside the migration path.
+
+### 4. Start Standing
+
+```bash
+npm run dev -- --port 3001
+```
+
+Open:
+
+```text
+http://localhost:3001
+```
+
+Authentication begins at:
+
+```text
+http://localhost:3001/auth/login
+```
+
+---
+
+## API Behavior
+
+A basic health check is available at:
+
+```text
+GET /api/health
+```
+
+Authenticated workspace APIs require a valid Standing session.
+
+For example:
+
+```text
+GET /api/workspace
+```
+
+must reject anonymous callers rather than returning another user's workspace
+state.
+
+Persistent records are associated with the authenticated workspace owner.
+
+Client-supplied identity must never be treated as authoritative for ownership.
+
+---
+
+## Database
+
+### `thread_states`
+
+Stores user-specific state associated with a conversation thread.
+
+Important fields include:
+
+- `owner_id`
+- `thread_id`
+- `state`
+- `starred`
+- `unread`
+
+`owner_id` and `thread_id` are uniquely associated.
+
+### `contact_notes`
+
+Stores private notes associated with a contact.
+
+Important fields include:
+
+- `owner_id`
+- `contact_id`
+- `body`
+
+### `drafts`
+
+Stores pending correspondence.
+
+Important fields include:
+
+- `owner_id`
+- `recipient`
+- `subject`
+- `body`
+- `status`
+
+---
+
+## Development Principles
+
+Standing should preserve several invariants as the product grows.
+
+### Identity owns data
+
+Workspace data belongs to the authenticated user.
+
+Ownership must be established server-side from authenticated identity, not from
+an arbitrary client-provided owner identifier.
+
+### Memory should be useful
+
+Persist information because it improves future interactions, not merely because
+it can be stored.
+
+Standing is intended to become relationship memory, not relationship exhaust.
+
+### Automation should reduce bookkeeping
+
+The long-term value of Standing depends on reducing manual CRM behavior.
+
+Useful relationship state should increasingly be derived from actual
+interaction rather than requiring constant user maintenance.
+
+### Source and inference are different things
+
+Observed facts, user-authored notes, derived signals, and model-generated
+inferences should remain distinguishable.
+
+A relationship system becomes considerably less useful when it confidently
+misremembers people.
+
+### Private means private
+
+Relationship data can contain sensitive professional and personal context.
+
+Authentication, tenant isolation, data minimization, and careful handling of
+derived information are product requirements, not later infrastructure work.
+
+---
+
+## Direction
+
+Standing is being developed toward a relationship command layer capable of
+answering questions such as:
+
+- Who needs my attention?
+- What am I waiting on?
+- Who is waiting on me?
+- What should I remember before contacting this person?
+- Which relationships are becoming more active?
+- Which relationships are going cold?
+- What commitments remain unresolved?
+- What changed since the last interaction?
+
+The intended progression is:
+
+```text
+interaction
+    ↓
+structured state
+    ↓
+relationship memory
+    ↓
+signals
+    ↓
+prioritization
+    ↓
+next action
+```
+
+---
+
+## Name
+
+**Standing** refers to the state of a relationship:
+
+> Where do we stand?
+
+The product turns that question into something a system can remember,
+understand, and eventually help act upon.
+
+---
+
+Standing™  
+**RELATIONSHIP COMMAND**
