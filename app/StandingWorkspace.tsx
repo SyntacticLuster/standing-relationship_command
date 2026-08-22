@@ -781,10 +781,11 @@ export default function StandingWorkspace({
                   <p>Correspondence</p>
                   <h1>{sectionTitle(view)}</h1>
                 </div>
-                {view === "priority" ? (
-                  <PriorityOverflowMenu
+<WorkspaceSectionOverflowMenu
+                    view={view as "priority" | "inbox" | "waiting" | "snoozed" | "archived"}
                     visibleThreads={visibleThreads}
                     onRefresh={refreshWorkspace}
+                    onReviewPriority={() => selectView("priority")}
                     onReviewSignals={() => setToast("Signals view is queued after live ingestion")}
                     onMarkVisibleRead={() => {
                       visibleThreads
@@ -792,12 +793,15 @@ export default function StandingWorkspace({
                         .forEach((t) => commitThread(t, { unread: false }));
                       setToast("Marked visible as read");
                     }}
+                    onUnsnoozVisible={() => {
+                      visibleThreads.forEach((t) => commitThread(t, { state: "inbox", unread: false }));
+                      setToast("Unsnoozed visible conversations");
+                    }}
+                    onRestoreVisible={() => {
+                      visibleThreads.forEach((t) => commitThread(t, { state: "inbox", unread: false }));
+                      setToast("Restored visible conversations");
+                    }}
                   />
-                ) : (
-                  <button className="icon-button" aria-label="More list actions">
-                    <Icon name="more" />
-                  </button>
-                )}
               </div>
 
               <div className="filter-row" role="tablist" aria-label="Thread filters">
@@ -1385,16 +1389,26 @@ function RelationshipOverflowMenu({
   );
 }
 
-function PriorityOverflowMenu({
+type MailView = "priority" | "inbox" | "waiting" | "snoozed" | "archived";
+
+function WorkspaceSectionOverflowMenu({
+  view,
   visibleThreads,
   onRefresh,
-  onMarkVisibleRead,
+  onReviewPriority,
   onReviewSignals,
+  onMarkVisibleRead,
+  onUnsnoozVisible,
+  onRestoreVisible,
 }: {
+  view: MailView;
   visibleThreads: Thread[];
   onRefresh: () => void;
-  onMarkVisibleRead: () => void;
+  onReviewPriority: () => void;
   onReviewSignals: () => void;
+  onMarkVisibleRead: () => void;
+  onUnsnoozVisible: () => void;
+  onRestoreVisible: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const menuRef = React.useRef<HTMLDivElement>(null);
@@ -1428,14 +1442,23 @@ function PriorityOverflowMenu({
     action();
   };
 
+  const sectionLabel = {
+    priority: "Priority",
+    inbox: "Inbox",
+    waiting: "Waiting",
+    snoozed: "Snoozed",
+    archived: "Archive",
+  }[view];
+
   const hasUnread = visibleThreads.some((t) => t.unread);
+  const hasVisible = visibleThreads.length > 0;
 
   return (
     <div className="overflow-menu-anchor" ref={menuRef}>
       <button
         ref={triggerRef}
         className="icon-button"
-        aria-label="Priority actions"
+        aria-label={`${sectionLabel} actions`}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
@@ -1444,35 +1467,76 @@ function PriorityOverflowMenu({
       </button>
 
       {open && (
-        <div className="overflow-menu" role="menu" aria-label="Priority actions">
+        <div className="overflow-menu" role="menu" aria-label={`${sectionLabel} actions`}>
           <button role="menuitem" onClick={() => invoke(onRefresh)}>
             <Icon name="refresh" size={14} />
-            Refresh priority
+            Refresh {sectionLabel.toLowerCase()}
           </button>
-          <button
-            role="menuitem"
-            onClick={() => invoke(onMarkVisibleRead)}
-            disabled={!hasUnread}
-            className={!hasUnread ? "overflow-menu-disabled" : ""}
-            title={!hasUnread ? "No unread conversations visible" : undefined}
-          >
-            <Icon name="check" size={14} />
-            Mark visible as read
-          </button>
-          <button role="menuitem" onClick={() => invoke(onReviewSignals)}>
-            <Icon name="spark" size={14} />
-            Review signals
-          </button>
-          <div className="overflow-menu-separator" role="separator" />
-          <button
-            role="menuitem"
-            disabled
-            title="Priority rules are coming in a future release"
-            className="overflow-menu-disabled"
-          >
-            <Icon name="settings" size={14} />
-            Priority rules
-          </button>
+
+          {(view === "priority" || view === "inbox" || view === "waiting") && (
+            <button
+              role="menuitem"
+              onClick={() => invoke(onMarkVisibleRead)}
+              disabled={!hasUnread}
+              className={!hasUnread ? "overflow-menu-disabled" : ""}
+              title={!hasUnread ? "No unread conversations visible" : undefined}
+            >
+              <Icon name="check" size={14} />
+              Mark visible as read
+            </button>
+          )}
+
+          {view === "snoozed" && (
+            <button
+              role="menuitem"
+              onClick={() => invoke(onUnsnoozVisible)}
+              disabled={!hasVisible}
+              className={!hasVisible ? "overflow-menu-disabled" : ""}
+              title={!hasVisible ? "No snoozed conversations visible" : undefined}
+            >
+              <Icon name="check" size={14} />
+              Unsnooze visible
+            </button>
+          )}
+
+          {view === "archived" && (
+            <button
+              role="menuitem"
+              onClick={() => invoke(onRestoreVisible)}
+              disabled={!hasVisible}
+              className={!hasVisible ? "overflow-menu-disabled" : ""}
+              title={!hasVisible ? "No archived conversations visible" : undefined}
+            >
+              <Icon name="inbox" size={14} />
+              Restore visible
+            </button>
+          )}
+
+          {view !== "priority" && (
+            <button role="menuitem" onClick={() => invoke(onReviewPriority)}>
+              <Icon name="bolt" size={14} />
+              Review priority
+            </button>
+          )}
+
+          {view === "priority" && (
+            <>
+              <button role="menuitem" onClick={() => invoke(onReviewSignals)}>
+                <Icon name="spark" size={14} />
+                Review signals
+              </button>
+              <div className="overflow-menu-separator" role="separator" />
+              <button
+                role="menuitem"
+                disabled
+                title="Priority rules are coming in a future release"
+                className="overflow-menu-disabled"
+              >
+                <Icon name="settings" size={14} />
+                Priority rules
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>
