@@ -1,0 +1,1031 @@
+"use client";
+
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { contacts, initialThreads, type Contact, type Thread } from "./signal-data";
+
+type MailSection =
+  | "priority"
+  | "inbox"
+  | "waiting"
+  | "snoozed"
+  | "archived";
+type WorkspaceView = MailSection | "contacts";
+type ThreadFilter = "all" | "unread" | "reply" | "starred";
+type StoredWorkspace = {
+  threadStates: Array<{
+    threadId: string;
+    state: Thread["state"];
+    starred: boolean;
+    unread: boolean;
+  }>;
+  contactNotes: Array<{ contactId: string; body: string }>;
+  draftCount: number;
+};
+type IconName =
+  | "archive"
+  | "arrow-left"
+  | "bolt"
+  | "check"
+  | "chevron-down"
+  | "clock"
+  | "close"
+  | "compose"
+  | "contact"
+  | "inbox"
+  | "link"
+  | "mail"
+  | "menu"
+  | "more"
+  | "note"
+  | "reply"
+  | "search"
+  | "send"
+  | "settings"
+  | "spark"
+  | "star"
+  | "user"
+  | "waiting";
+
+const navItems: { id: WorkspaceView; label: string; icon: IconName }[] = [
+  { id: "priority", label: "Priority", icon: "bolt" },
+  { id: "inbox", label: "Inbox", icon: "inbox" },
+  { id: "waiting", label: "Waiting", icon: "waiting" },
+  { id: "snoozed", label: "Snoozed", icon: "clock" },
+  { id: "archived", label: "Archive", icon: "archive" },
+  { id: "contacts", label: "Contacts", icon: "contact" },
+];
+
+const filterItems: { id: ThreadFilter; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "unread", label: "Unread" },
+  { id: "reply", label: "Needs reply" },
+  { id: "starred", label: "Starred" },
+];
+
+function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
+  const common = {
+    width: size,
+    height: size,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.8,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    "aria-hidden": true,
+  };
+
+  const paths: Record<IconName, React.ReactNode> = {
+    archive: <><path d="M4 7.5h16v11H4z" /><path d="M3 4.5h18v3H3zM9 11.5h6" /></>,
+    "arrow-left": <><path d="m14.5 5-7 7 7 7" /></>,
+    bolt: <path d="m13.4 2-8 12h6l-.8 8 8-12h-6z" />,
+    check: <path d="m5 12 4.2 4.2L19 6.5" />,
+    "chevron-down": <path d="m7 10 5 5 5-5" />,
+    clock: <><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2" /></>,
+    close: <><path d="m6 6 12 12M18 6 6 18" /></>,
+    compose: <><path d="M4.5 19.5h4l10-10a2.8 2.8 0 0 0-4-4l-10 10v4z" /><path d="m13 7 4 4" /></>,
+    contact: <><circle cx="9" cy="8" r="3" /><path d="M3.5 19c.4-4 2.2-6 5.5-6s5.1 2 5.5 6M16 7h4M16 11h4M17 15h3" /></>,
+    inbox: <><path d="M4 5h16v14H4z" /><path d="m4 14 4-4 3 3h2l3-3 4 4" /></>,
+    link: <><path d="m9.5 14.5 5-5" /><path d="M7.5 16.5 6 18a3.5 3.5 0 0 1-5-5l3-3a3.5 3.5 0 0 1 5 0M16.5 7.5 18 6a3.5 3.5 0 0 1 5 5l-3 3a3.5 3.5 0 0 1-5 0" /></>,
+    mail: <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m4 7 8 6 8-6" /></>,
+    menu: <><path d="M5 7h14M5 12h14M5 17h14" /></>,
+    more: <><circle cx="5" cy="12" r="1" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none" /><circle cx="19" cy="12" r="1" fill="currentColor" stroke="none" /></>,
+    note: <><path d="M5 3.5h14v17H5z" /><path d="M8 8h8M8 12h8M8 16h5" /></>,
+    reply: <><path d="m10 8-5 4 5 4" /><path d="M5 12h8c4 0 6 2 6 6" /></>,
+    search: <><circle cx="10.5" cy="10.5" r="6.5" /><path d="m15.5 15.5 5 5" /></>,
+    send: <><path d="m3 4 18 8-18 8 3-8z" /><path d="M6 12h15" /></>,
+    settings: <><circle cx="12" cy="12" r="3" /><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1" /></>,
+    spark: <><path d="m12 2 1.6 5.4L19 9l-5.4 1.6L12 16l-1.6-5.4L5 9l5.4-1.6z" /><path d="m19 16 .7 2.3L22 19l-2.3.7L19 22l-.7-2.3L16 19l2.3-.7z" /></>,
+    star: <path d="m12 3 2.7 5.4 6 .9-4.3 4.2 1 6-5.4-2.9-5.4 2.9 1-6-4.3-4.2 6-.9z" />,
+    user: <><circle cx="12" cy="8" r="3.5" /><path d="M4.5 20c.6-4.5 3.1-7 7.5-7s6.9 2.5 7.5 7" /></>,
+    waiting: <><path d="M5 5h14M5 19h14M7 5c0 4 2 5 5 7-3 2-5 3-5 7M17 5c0 4-2 5-5 7 3 2 5 3 5 7" /></>,
+  };
+
+  return <svg {...common}>{paths[name]}</svg>;
+}
+
+function Avatar({
+  initials,
+  accent,
+  size = "normal",
+}: {
+  initials: string;
+  accent: string;
+  size?: "small" | "normal" | "large";
+}) {
+  return (
+    <span
+      className={`avatar avatar-${size}`}
+      style={{ "--avatar-accent": accent } as React.CSSProperties}
+      aria-hidden="true"
+    >
+      {initials}
+    </span>
+  );
+}
+
+function sectionTitle(view: WorkspaceView) {
+  const names: Record<WorkspaceView, string> = {
+    priority: "Priority",
+    inbox: "Inbox",
+    waiting: "Waiting",
+    snoozed: "Snoozed",
+    archived: "Archive",
+    contacts: "Contacts",
+  };
+  return names[view];
+}
+
+export default function SignalWorkspace({
+  displayName,
+  email,
+}: {
+  displayName: string;
+  email: string | null;
+}) {
+  const [threads, setThreads] = useState<Thread[]>(initialThreads);
+  const [view, setView] = useState<WorkspaceView>("priority");
+  const [filter, setFilter] = useState<ThreadFilter>("all");
+  const [query, setQuery] = useState("");
+  const [selectedThreadId, setSelectedThreadId] = useState(initialThreads[0].id);
+  const [selectedContactId, setSelectedContactId] = useState(contacts[0].id);
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [connectOpen, setConnectOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
+  const [drafts, setDrafts] = useState(0);
+  const [draftTo, setDraftTo] = useState("");
+  const [draftSubject, setDraftSubject] = useState("");
+  const [draftBody, setDraftBody] = useState("");
+  const [noteDraft, setNoteDraft] = useState("");
+  const [contactNotes, setContactNotes] = useState<Record<string, string[]>>({});
+  const [toast, setToast] = useState("Loading private workspace state…");
+
+  useEffect(() => {
+    let active = true;
+
+    fetch("/api/workspace", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`workspace state ${response.status}`);
+        return (await response.json()) as StoredWorkspace;
+      })
+      .then((stored) => {
+        if (!active) return;
+        const stateByThread = new Map(
+          stored.threadStates.map((state) => [state.threadId, state]),
+        );
+        setThreads((current) =>
+          current.map((thread) => {
+            const saved = stateByThread.get(thread.id);
+            return saved
+              ? {
+                  ...thread,
+                  state: saved.state,
+                  starred: saved.starred,
+                  unread: saved.unread,
+                }
+              : thread;
+          }),
+        );
+        setContactNotes(
+          stored.contactNotes.reduce<Record<string, string[]>>((all, note) => {
+            all[note.contactId] = [...(all[note.contactId] ?? []), note.body];
+            return all;
+          }, {}),
+        );
+        setDrafts(stored.draftCount);
+        setToast("Example workspace — private changes are durable");
+      })
+      .catch(() => {
+        if (active) setToast("Example workspace — session changes only");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const visibleThreads = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    return threads.filter((thread) => {
+      const sectionMatch =
+        view === "priority"
+          ? thread.priority === "high" && thread.state !== "archived"
+          : view === "waiting"
+            ? thread.owner === "them" && thread.state !== "archived"
+            : view === "contacts"
+              ? false
+              : thread.state === view;
+
+      const filterMatch =
+        filter === "all" ||
+        (filter === "unread" && thread.unread) ||
+        (filter === "reply" && thread.owner === "me") ||
+        (filter === "starred" && thread.starred);
+
+      const queryMatch =
+        !normalized ||
+        `${thread.sender} ${thread.company} ${thread.subject} ${thread.preview} ${thread.tags.join(" ")}`
+          .toLowerCase()
+          .includes(normalized);
+
+      return sectionMatch && filterMatch && queryMatch;
+    });
+  }, [threads, view, filter, query]);
+
+  const visibleContacts = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    return contacts.filter((contact) =>
+      !normalized
+        ? true
+        : `${contact.name} ${contact.role} ${contact.company} ${contact.email} ${contact.tags.join(" ")}`
+            .toLowerCase()
+            .includes(normalized),
+    );
+  }, [query]);
+
+  const selectedThread =
+    view === "contacts"
+      ? threads.find((thread) => thread.id === selectedThreadId) ?? threads[0]
+      : visibleThreads.find((thread) => thread.id === selectedThreadId) ??
+        visibleThreads[0] ??
+        threads.find((thread) => thread.id === selectedThreadId) ??
+        threads[0];
+  const selectedContact =
+    contacts.find((contact) =>
+      contact.id ===
+      (view === "contacts" ? selectedContactId : selectedThread?.contactId),
+    ) ?? contacts[0];
+
+  const counts = useMemo(
+    () => ({
+      priority: threads.filter(
+        (thread) => thread.priority === "high" && thread.state !== "archived",
+      ).length,
+      inbox: threads.filter((thread) => thread.state === "inbox").length,
+      waiting: threads.filter(
+        (thread) => thread.owner === "them" && thread.state !== "archived",
+      ).length,
+      snoozed: threads.filter((thread) => thread.state === "snoozed").length,
+      archived: threads.filter((thread) => thread.state === "archived").length,
+      contacts: contacts.length,
+    }),
+    [threads],
+  );
+
+  const persistThreadState = async (thread: Thread) => {
+    const response = await fetch("/api/workspace/thread-state", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        threadId: thread.id,
+        state: thread.state,
+        starred: thread.starred,
+        unread: thread.unread,
+      }),
+    });
+    if (!response.ok) throw new Error(`thread state ${response.status}`);
+  };
+
+  const commitThread = (
+    thread: Thread,
+    changes: Partial<Pick<Thread, "state" | "starred" | "unread">>,
+    successMessage?: string,
+  ) => {
+    const updated = { ...thread, ...changes };
+    setThreads((current) =>
+      current.map((item) => (item.id === updated.id ? updated : item)),
+    );
+    void persistThreadState(updated)
+      .then(() => {
+        if (successMessage) setToast(successMessage);
+      })
+      .catch(() => setToast("Change kept in this session; durable sync is unavailable"));
+  };
+
+  const moveThread = (state: Thread["state"], message: string) => {
+    if (!selectedThread) return;
+    commitThread(selectedThread, { state, unread: false }, message);
+    setMobileDetailOpen(false);
+  };
+
+  const toggleThread = (key: "starred" | "unread") => {
+    if (!selectedThread) return;
+    commitThread(selectedThread, { [key]: !selectedThread[key] });
+  };
+
+  const openReply = () => {
+    if (!selectedThread || !selectedContact) return;
+    setDraftTo(selectedContact.email);
+    setDraftSubject(
+      selectedThread.subject.toLowerCase().startsWith("re:")
+        ? selectedThread.subject
+        : `Re: ${selectedThread.subject}`,
+    );
+    setDraftBody("");
+    setComposeOpen(true);
+  };
+
+  const openNewMessage = () => {
+    setDraftTo("");
+    setDraftSubject("");
+    setDraftBody("");
+    setComposeOpen(true);
+  };
+
+  const saveDraft = async (event: FormEvent) => {
+    event.preventDefault();
+    setComposeOpen(false);
+    try {
+      const response = await fetch("/api/workspace/drafts", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          recipient: draftTo,
+          subject: draftSubject,
+          body: draftBody,
+        }),
+      });
+      if (!response.ok) throw new Error(`draft ${response.status}`);
+      setDrafts((value) => value + 1);
+      setToast("Draft saved privately");
+    } catch {
+      setDrafts((value) => value + 1);
+      setToast("Draft kept in this session; durable sync is unavailable");
+    }
+  };
+
+  const addContactNote = async (event: FormEvent) => {
+    event.preventDefault();
+    const note = noteDraft.trim();
+    if (!note) return;
+    setContactNotes((current) => ({
+      ...current,
+      [selectedContact.id]: [...(current[selectedContact.id] ?? []), note],
+    }));
+    setNoteDraft("");
+    try {
+      const response = await fetch("/api/workspace/notes", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ contactId: selectedContact.id, body: note }),
+      });
+      if (!response.ok) throw new Error(`note ${response.status}`);
+      setToast(`Private note added to ${selectedContact.name}`);
+    } catch {
+      setToast("Note kept in this session; durable sync is unavailable");
+    }
+  };
+
+  const selectView = (next: WorkspaceView) => {
+    setView(next);
+    setFilter("all");
+    setQuery("");
+    setMobileNavOpen(false);
+    setMobileDetailOpen(false);
+  };
+
+  return (
+    <main className="signal-shell">
+      <aside className={`sidebar ${mobileNavOpen ? "sidebar-open" : ""}`}>
+        <div className="brand-lockup">
+          <div className="brand-mark" aria-hidden="true">
+            <span />
+            <span />
+          </div>
+          <div>
+            <strong>SignalSuite</strong>
+            <small>relationship command</small>
+          </div>
+          <button
+            className="icon-button sidebar-close"
+            aria-label="Close navigation"
+            onClick={() => setMobileNavOpen(false)}
+          >
+            <Icon name="close" />
+          </button>
+        </div>
+
+        <button className="compose-button" onClick={openNewMessage}>
+          <Icon name="compose" />
+          <span>Compose</span>
+          <kbd>C</kbd>
+        </button>
+
+        <nav className="primary-nav" aria-label="Mailbox">
+          <p className="nav-label">Workspace</p>
+          {navItems.slice(0, 5).map((item) => (
+            <button
+              key={item.id}
+              className={view === item.id ? "active" : ""}
+              onClick={() => selectView(item.id)}
+            >
+              <Icon name={item.icon} />
+              <span>{item.label}</span>
+              <small>{counts[item.id]}</small>
+            </button>
+          ))}
+
+          <p className="nav-label nav-label-spaced">Relationships</p>
+          <button
+            className={view === "contacts" ? "active" : ""}
+            onClick={() => selectView("contacts")}
+          >
+            <Icon name="contact" />
+            <span>Contacts</span>
+            <small>{counts.contacts}</small>
+          </button>
+          <button onClick={() => setToast("Signals view is queued after live ingestion")}>
+            <Icon name="spark" />
+            <span>Signals</span>
+            <em>soon</em>
+          </button>
+        </nav>
+
+        <div className="sidebar-spacer" />
+
+        <button className="connect-card" onClick={() => setConnectOpen(true)}>
+          <span className="connection-orb"><span /></span>
+          <span>
+            <strong>Mailbox offline</strong>
+            <small>Connect the first provider</small>
+          </span>
+          <Icon name="chevron-down" size={15} />
+        </button>
+
+        <div className="account-row">
+          <span className="account-avatar">{displayName.slice(0, 1).toUpperCase()}</span>
+          <span>
+            <strong>{displayName}</strong>
+            <small>{email ?? "Private operator"}</small>
+          </span>
+          <button
+            className="icon-button"
+            aria-label="Settings"
+            onClick={() => setToast("Settings are not wired in this slice")}
+          >
+            <Icon name="settings" size={17} />
+          </button>
+        </div>
+      </aside>
+
+      {mobileNavOpen && (
+        <button
+          className="mobile-scrim"
+          aria-label="Close navigation"
+          onClick={() => setMobileNavOpen(false)}
+        />
+      )}
+
+      <section className="workspace">
+        <header className="topbar">
+          <button
+            className="icon-button mobile-menu"
+            aria-label="Open navigation"
+            onClick={() => setMobileNavOpen(true)}
+          >
+            <Icon name="menu" />
+          </button>
+          <label className="global-search">
+            <Icon name="search" size={17} />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search people, threads, facts…"
+              aria-label="Search people, threads, and facts"
+            />
+            <kbd>⌘ K</kbd>
+          </label>
+          <div className="topbar-actions">
+            <span className="review-state"><span /> Example workspace</span>
+            <button className="quiet-button" onClick={() => setConnectOpen(true)}>
+              <Icon name="link" size={16} />
+              Connect mailbox
+            </button>
+            <button className="compact-compose" onClick={openNewMessage}>
+              <Icon name="compose" size={17} />
+              Compose
+            </button>
+          </div>
+        </header>
+
+        <div className={`content-grid ${view === "contacts" ? "contacts-mode" : ""}`}>
+          {view === "contacts" ? (
+            <ContactsList
+              contacts={visibleContacts}
+              selectedId={selectedContact.id}
+              onSelect={(id) => {
+                setSelectedContactId(id);
+                setMobileDetailOpen(true);
+              }}
+            />
+          ) : (
+            <section className={`thread-list-pane ${mobileDetailOpen ? "mobile-hidden" : ""}`}>
+              <div className="pane-heading">
+                <div>
+                  <p>Correspondence</p>
+                  <h1>{sectionTitle(view)}</h1>
+                </div>
+                <button className="icon-button" aria-label="More list actions">
+                  <Icon name="more" />
+                </button>
+              </div>
+
+              <div className="filter-row" role="tablist" aria-label="Thread filters">
+                {filterItems.map((item) => (
+                  <button
+                    key={item.id}
+                    role="tab"
+                    aria-selected={filter === item.id}
+                    className={filter === item.id ? "active" : ""}
+                    onClick={() => setFilter(item.id)}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="list-summary">
+                <span>{visibleThreads.length} conversations</span>
+                <span><i /> ranked by signal</span>
+              </div>
+
+              <div className="thread-list">
+                {visibleThreads.length ? (
+                  visibleThreads.map((thread) => (
+                    <ThreadRow
+                      key={thread.id}
+                      thread={thread}
+                      selected={selectedThread?.id === thread.id}
+                      onSelect={() => {
+                        setSelectedThreadId(thread.id);
+                        setMobileDetailOpen(true);
+                        if (thread.unread) {
+                          commitThread(thread, { unread: false });
+                        }
+                      }}
+                      onStar={(event) => {
+                        event.stopPropagation();
+                        commitThread(thread, { starred: !thread.starred });
+                      }}
+                    />
+                  ))
+                ) : (
+                  <div className="empty-list">
+                    <span><Icon name="check" size={23} /></span>
+                    <strong>Nothing demanding attention</strong>
+                    <p>That is either excellent or suspicious. Try another filter.</p>
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
+
+          <section className={`detail-pane ${mobileDetailOpen ? "mobile-visible" : ""}`}>
+            <button
+              className="mobile-back"
+              onClick={() => setMobileDetailOpen(false)}
+            >
+              <Icon name="arrow-left" size={17} />
+              {view === "contacts" ? "Contacts" : sectionTitle(view)}
+            </button>
+
+            {view === "contacts" ? (
+              <ContactDetail
+                contact={selectedContact}
+                notes={contactNotes[selectedContact.id] ?? []}
+                noteDraft={noteDraft}
+                onNoteDraft={setNoteDraft}
+                onAddNote={addContactNote}
+                onCompose={() => {
+                  setDraftTo(selectedContact.email);
+                  setDraftSubject("");
+                  setDraftBody("");
+                  setComposeOpen(true);
+                }}
+              />
+            ) : selectedThread ? (
+              <ThreadDetail
+                thread={selectedThread}
+                onReply={openReply}
+                onArchive={() => moveThread("archived", "Conversation archived")}
+                onSnooze={() => moveThread("snoozed", "Conversation snoozed")}
+                onToggleRead={() => toggleThread("unread")}
+                onToggleStar={() => toggleThread("starred")}
+              />
+            ) : null}
+          </section>
+
+          <aside className={`intelligence-pane ${mobileDetailOpen ? "mobile-visible" : ""}`}>
+            <RelationshipPanel
+              contact={selectedContact}
+              thread={view === "contacts" ? undefined : selectedThread}
+              notes={contactNotes[selectedContact.id] ?? []}
+              onOpenContact={() => {
+                setSelectedContactId(selectedContact.id);
+                setView("contacts");
+              }}
+            />
+          </aside>
+        </div>
+      </section>
+
+      <div className="toast" role="status" aria-live="polite">
+        <span />
+        {toast}
+      </div>
+
+      {drafts > 0 && <span className="draft-count" aria-label={`${drafts} saved drafts`}>{drafts}</span>}
+
+      {composeOpen && (
+        <div className="modal-layer" role="presentation">
+          <button
+            className="modal-backdrop"
+            aria-label="Close compose window"
+            onClick={() => setComposeOpen(false)}
+          />
+          <form className="compose-modal" onSubmit={saveDraft}>
+            <header>
+              <div>
+                <p>New correspondence</p>
+                <h2>Compose</h2>
+              </div>
+              <button
+                type="button"
+                className="icon-button"
+                aria-label="Close compose window"
+                onClick={() => setComposeOpen(false)}
+              >
+                <Icon name="close" />
+              </button>
+            </header>
+            <label>
+              <span>To</span>
+              <input
+                type="email"
+                value={draftTo}
+                onChange={(event) => setDraftTo(event.target.value)}
+                placeholder="name@company.com"
+              />
+            </label>
+            <label>
+              <span>Subject</span>
+              <input
+                value={draftSubject}
+                onChange={(event) => setDraftSubject(event.target.value)}
+                placeholder="What is this about?"
+              />
+            </label>
+            <textarea
+              value={draftBody}
+              onChange={(event) => setDraftBody(event.target.value)}
+              placeholder="Write with context. SignalSuite will eventually surface the useful bits before you hit send."
+              aria-label="Message body"
+            />
+            <div className="compose-context">
+              <Icon name="spark" size={16} />
+              <span>Live context and send authority arrive with the mailbox adapter.</span>
+            </div>
+            <footer>
+              <button type="button" className="text-button" onClick={() => setComposeOpen(false)}>
+                Discard
+              </button>
+              <div>
+                <button type="submit" className="quiet-button">Save draft</button>
+                <button type="button" className="send-button" disabled title="Connect a mailbox to send">
+                  <Icon name="send" size={16} />
+                  Send
+                </button>
+              </div>
+            </footer>
+          </form>
+        </div>
+      )}
+
+      {connectOpen && (
+        <div className="modal-layer" role="presentation">
+          <button
+            className="modal-backdrop"
+            aria-label="Close connection window"
+            onClick={() => setConnectOpen(false)}
+          />
+          <section className="connect-modal" role="dialog" aria-modal="true" aria-labelledby="connect-title">
+            <header>
+              <div className="connection-glyph"><Icon name="link" /></div>
+              <div>
+                <p>Provider boundary</p>
+                <h2 id="connect-title">Choose the first live adapter</h2>
+              </div>
+              <button className="icon-button" aria-label="Close" onClick={() => setConnectOpen(false)}>
+                <Icon name="close" />
+              </button>
+            </header>
+            <p className="connect-copy">
+              The interface is deliberately provider-neutral. Credentials stay server-side; imported messages retain source identity and timestamps.
+            </p>
+            <div className="provider-list">
+              <button onClick={() => setToast("AWS mailbox adapter selected for implementation") }>
+                <span className="provider-mark aws">AWS</span>
+                <span><strong>SES inbound + outbound</strong><small>Best match for the current mail infrastructure</small></span>
+                <em>Recommended</em>
+              </button>
+              <button onClick={() => setToast("Microsoft 365 adapter noted") }>
+                <span className="provider-mark microsoft">M</span>
+                <span><strong>Microsoft 365</strong><small>Graph-based mail and contact sync</small></span>
+                <Icon name="chevron-down" size={15} />
+              </button>
+              <button onClick={() => setToast("Gmail adapter noted") }>
+                <span className="provider-mark gmail">G</span>
+                <span><strong>Gmail</strong><small>Mail, labels, drafts, and contacts</small></span>
+                <Icon name="chevron-down" size={15} />
+              </button>
+            </div>
+            <footer>
+              No provider is connected in this review build. Nothing here can send, delete, or mutate external mail.
+            </footer>
+          </section>
+        </div>
+      )}
+    </main>
+  );
+}
+
+function ThreadRow({
+  thread,
+  selected,
+  onSelect,
+  onStar,
+}: {
+  thread: Thread;
+  selected: boolean;
+  onSelect: () => void;
+  onStar: (event: React.MouseEvent<HTMLButtonElement>) => void;
+}) {
+  return (
+    <article className={`thread-row ${selected ? "selected" : ""}`}>
+      <button className="thread-select" onClick={onSelect} aria-label={`Open ${thread.subject}`}>
+      <span className="thread-leading">
+        {thread.unread ? <i className="unread-dot" /> : <i />}
+        <Avatar initials={thread.initials} accent={thread.accent} />
+      </span>
+      <span className="thread-content">
+        <span className="thread-sender-line">
+          <strong>{thread.sender}</strong>
+          <time>{thread.time}</time>
+        </span>
+        <b>{thread.subject}</b>
+        <span className="thread-preview">{thread.preview}</span>
+        <span className="thread-tags">
+          {thread.tags.slice(0, 2).map((tag) => <em key={tag}>{tag}</em>)}
+        </span>
+      </span>
+      </button>
+      <span className="thread-actions">
+        <button
+          className={thread.starred ? "starred" : ""}
+          aria-label={thread.starred ? "Unstar conversation" : "Star conversation"}
+          onClick={onStar}
+        >
+          <Icon name="star" size={15} />
+        </button>
+      </span>
+    </article>
+  );
+}
+
+function ThreadDetail({
+  thread,
+  onReply,
+  onArchive,
+  onSnooze,
+  onToggleRead,
+  onToggleStar,
+}: {
+  thread: Thread;
+  onReply: () => void;
+  onArchive: () => void;
+  onSnooze: () => void;
+  onToggleRead: () => void;
+  onToggleStar: () => void;
+}) {
+  return (
+    <div className="thread-detail">
+      <header className="detail-header">
+        <div className="detail-kicker">
+          <span>{thread.signal}</span>
+          <time>{thread.fullDate}</time>
+        </div>
+        <h2>{thread.subject}</h2>
+        <div className="detail-toolbar">
+          <button onClick={onArchive} title="Archive"><Icon name="archive" size={17} /><span>Archive</span></button>
+          <button onClick={onSnooze} title="Snooze"><Icon name="clock" size={17} /><span>Snooze</span></button>
+          <button onClick={onToggleRead} title="Toggle unread"><Icon name="mail" size={17} /><span>Unread</span></button>
+          <button onClick={onToggleStar} className={thread.starred ? "active" : ""} title="Star"><Icon name="star" size={17} /></button>
+          <button title="More actions"><Icon name="more" size={17} /></button>
+        </div>
+      </header>
+
+      <div className="message-stack">
+        {thread.messages.map((message) => (
+          <article key={message.id} className={`message-card ${message.direction}`}>
+            <header>
+              <Avatar
+                initials={message.author === "You" ? "AM" : thread.initials}
+                accent={message.author === "You" ? "#f5f2e9" : thread.accent}
+              />
+              <span>
+                <strong>{message.author}</strong>
+                <small>{message.email}</small>
+              </span>
+              <time>{message.sentAt}</time>
+            </header>
+            <div>
+              {message.body.map((paragraph, index) => <p key={index}>{paragraph}</p>)}
+            </div>
+          </article>
+        ))}
+      </div>
+
+      <div className="reply-dock">
+        <button onClick={onReply}>
+          <Icon name="reply" size={18} />
+          Reply to {thread.sender.split(" ")[0]}
+        </button>
+        <button className="icon-button" aria-label="More reply options">
+          <Icon name="chevron-down" size={16} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function RelationshipPanel({
+  contact,
+  thread,
+  notes,
+  onOpenContact,
+}: {
+  contact: Contact;
+  thread?: Thread;
+  notes: string[];
+  onOpenContact: () => void;
+}) {
+  return (
+    <div className="relationship-panel">
+      <header className="relationship-header">
+        <Avatar initials={contact.initials} accent={contact.accent} size="large" />
+        <div>
+          <h3>{contact.name}</h3>
+          <p>{contact.role} · {contact.company}</p>
+        </div>
+        <button className="icon-button" aria-label="More contact actions"><Icon name="more" /></button>
+      </header>
+
+      <button className="contact-link" onClick={onOpenContact}>
+        Open full relationship record
+        <span>→</span>
+      </button>
+
+      {thread && (
+        <section className="signal-summary">
+          <header><span><Icon name="spark" size={15} /></span><strong>Thread signal</strong></header>
+          <p>{thread.summary}</p>
+          <div>
+            <small>Next best action</small>
+            <strong>{thread.nextAction}</strong>
+          </div>
+        </section>
+      )}
+
+      <section className="relationship-score">
+        <header><span>Relationship strength</span><strong>{contact.relationship}</strong></header>
+        <div><span style={{ width: `${contact.relationship}%` }} /></div>
+        <p>{contact.lastTouch} · {contact.status.toLowerCase()}</p>
+      </section>
+
+      <section className="intel-section">
+        <header><h4>Known facts</h4><span>{contact.facts.length}</span></header>
+        <ul>
+          {contact.facts.map((fact) => <li key={fact}><span /><p>{fact}</p></li>)}
+        </ul>
+      </section>
+
+      <section className="intel-section open-loops">
+        <header><h4>Open loops</h4><span>{contact.openLoops.length}</span></header>
+        {contact.openLoops.length ? (
+          <ul>
+            {contact.openLoops.map((loop) => <li key={loop}><Icon name="clock" size={14} /><p>{loop}</p></li>)}
+          </ul>
+        ) : <p className="no-loops">No unresolved commitments.</p>}
+      </section>
+
+      {notes.length > 0 && (
+        <section className="intel-section">
+          <header><h4>Notes from this session</h4><span>{notes.length}</span></header>
+          <ul>{notes.map((note, index) => <li key={`${note}-${index}`}><span /><p>{note}</p></li>)}</ul>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function ContactsList({
+  contacts: items,
+  selectedId,
+  onSelect,
+}: {
+  contacts: Contact[];
+  selectedId: string;
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <section className="contacts-list-pane">
+      <div className="pane-heading contacts-heading">
+        <div><p>Relationship memory</p><h1>Contacts</h1></div>
+        <span>{items.length} people</span>
+      </div>
+      <div className="contact-column-labels">
+        <span>Person</span><span>Relationship</span>
+      </div>
+      <div className="contacts-list">
+        {items.map((contact) => (
+          <button
+            key={contact.id}
+            className={`contact-row ${selectedId === contact.id ? "selected" : ""}`}
+            onClick={() => onSelect(contact.id)}
+          >
+            <Avatar initials={contact.initials} accent={contact.accent} />
+            <span className="contact-main">
+              <strong>{contact.name}</strong>
+              <small>{contact.role} · {contact.company}</small>
+              <span>{contact.tags.slice(0, 2).map((tag) => <em key={tag}>{tag}</em>)}</span>
+            </span>
+            <span className="contact-health">
+              <strong>{contact.relationship}</strong>
+              <span><i style={{ width: `${contact.relationship}%` }} /></span>
+              <small>{contact.lastTouch}</small>
+            </span>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ContactDetail({
+  contact,
+  notes,
+  noteDraft,
+  onNoteDraft,
+  onAddNote,
+  onCompose,
+}: {
+  contact: Contact;
+  notes: string[];
+  noteDraft: string;
+  onNoteDraft: (value: string) => void;
+  onAddNote: (event: FormEvent) => void;
+  onCompose: () => void;
+}) {
+  return (
+    <div className="contact-detail">
+      <header className="contact-detail-hero">
+        <Avatar initials={contact.initials} accent={contact.accent} size="large" />
+        <div>
+          <span>{contact.status} relationship</span>
+          <h2>{contact.name}</h2>
+          <p>{contact.role} at {contact.company}</p>
+        </div>
+        <button onClick={onCompose}><Icon name="mail" size={17} />Message</button>
+      </header>
+
+      <section className="contact-coordinates">
+        <a href={`mailto:${contact.email}`}><span><Icon name="mail" size={16} /></span><small>Email</small><strong>{contact.email}</strong></a>
+        <div><span><Icon name="user" size={16} /></span><small>Location</small><strong>{contact.location}</strong></div>
+      </section>
+
+      <section className="contact-note">
+        <header><Icon name="note" size={16} /><h3>Working note</h3></header>
+        <p>{contact.note}</p>
+      </section>
+
+      <section className="timeline-section">
+        <header><h3>Relationship timeline</h3><span>Latest first</span></header>
+        <div className="timeline-item current"><i /><span><strong>Most recent touch</strong><small>{contact.lastTouch}</small></span><p>Correspondence captured in the active workspace.</p></div>
+        <div className="timeline-item"><i /><span><strong>Relationship classified</strong><small>{contact.status}</small></span><p>{contact.tags.join(" · ")}</p></div>
+        <div className="timeline-item"><i /><span><strong>Contact created</strong><small>Imported</small></span><p>Source identity retained for later provider sync.</p></div>
+      </section>
+
+      <form className="add-note-form" onSubmit={onAddNote}>
+        <label htmlFor="contact-note-input">Add a private note</label>
+        <textarea
+          id="contact-note-input"
+          value={noteDraft}
+          onChange={(event) => onNoteDraft(event.target.value)}
+          placeholder={`Remember something useful about ${contact.name.split(" ")[0]}…`}
+        />
+        <div><span>{notes.length} session notes</span><button type="submit" disabled={!noteDraft.trim()}>Add note</button></div>
+      </form>
+    </div>
+  );
+}
