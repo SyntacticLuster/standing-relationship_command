@@ -1929,26 +1929,44 @@ function SyncControl({
     : syncState === "failed" ? "Sync error — click to retry"
     : "Sync mailboxes now";
 
-  const stateClass =
-    !hasMailbox ? "no-mailbox"
-    : syncing ? "syncing"
-    : syncState === "failed" ? "failed"
-    : syncState === "synced" ? "synced"
-    : "idle";
+  const dotColor =
+    !hasMailbox ? "#3a4035"
+    : syncState === "failed" ? "var(--danger)"
+    : syncState === "syncing" ? "#6fbf5f"
+    : "#6fbf5f";
 
   return (
     <button
-      className={`sync-indicator sync-indicator-${stateClass}`}
+      className={`standing-sync-btn${syncing ? " is-syncing" : ""}`}
       aria-label={label}
       title={label}
       onClick={onSync}
       disabled={!hasMailbox || syncing}
     >
-      <svg className="sync-ring" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
-        <path d="M8 2 A6 6 0 1 1 2.8 11.5" />
-        <path d="M8 2 l1.4 1.6 M8 2 l-1.4 1.6" />
+      <svg
+        className={`standing-sync${syncing ? " is-syncing" : ""}`}
+        viewBox="0 0 20 20"
+        width="18"
+        height="18"
+        xmlns="http://www.w3.org/2000/svg"
+        aria-hidden="true"
+      >
+        <circle className="standing-sync__dot" cx="10" cy="10" r="2.75" fill={dotColor} />
+        <g
+          className="standing-sync__arrows"
+          style={{ transformOrigin: "10px 10px", transformBox: "view-box" }}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M5.1 6.7 A6 6 0 0 1 14.8 6.5" />
+          <path d="M14.8 6.5 L14.55 4.45 L16.55 5.45" />
+          <path d="M14.9 13.3 A6 6 0 0 1 5.2 13.5" />
+          <path d="M5.2 13.5 L5.45 15.55 L3.45 14.55" />
+        </g>
       </svg>
-      <span className="sync-dot" aria-hidden="true" />
     </button>
   );
 }

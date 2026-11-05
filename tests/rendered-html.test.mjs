@@ -13,9 +13,15 @@ test("packages the Standing product shell and durable workspace capability", asy
   assert.match(layoutBundle, /Standing.*Relationship Command|Relationship Command.*Standing/);
 
   // Workspace component chunk contains the UI strings
-  const workspaceChunk = ssrChunks.find((f) => f.startsWith("app_StandingWorkspace_tsx"));
-  assert.ok(workspaceChunk, "StandingWorkspace SSR chunk was not emitted");
-  const workspaceBundle = await readFile(new URL(workspaceChunk, ssrChunksDir), "utf8");
+  const ssrChunksDir2 = new URL("../.next/server/chunks/ssr/", import.meta.url);
+  const ssrChunks2 = await readdir(ssrChunksDir2);
+  let workspaceBundle = null;
+  for (const f of ssrChunks2) {
+    if (!f.endsWith(".js") || f.endsWith(".map")) continue;
+    const content = await readFile(new URL(f, ssrChunksDir2), "utf8");
+    if (content.includes("Search people, threads, facts")) { workspaceBundle = content; break; }
+  }
+  assert.ok(workspaceBundle, "StandingWorkspace SSR chunk was not emitted");
   assert.match(workspaceBundle, /Search people, threads, facts/);
   assert.match(workspaceBundle, /Nothing here can send, delete, or mutate external mail/);
 

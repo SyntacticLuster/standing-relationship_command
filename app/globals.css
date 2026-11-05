@@ -731,44 +731,40 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, a:focus-visib
 }
 
 /* ── Sync control ───────────────────────────────────────────────────────────── */
-.sync-indicator {
-  position: relative;
-  width: 18px;
-  height: 18px;
+.standing-sync-btn {
   padding: 0;
   border: none;
   background: transparent;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex: 0 0 18px;
 }
-.sync-indicator:disabled { cursor: default; }
-.sync-ring {
-  position: absolute;
-  inset: 1px;
-  width: 16px;
-  height: 16px;
-  color: #3e4a38;
-  transition: color 150ms ease;
+.standing-sync-btn:disabled { cursor: default; }
+.standing-sync {
+  display: block;
+  width: 18px;
+  height: 18px;
+  overflow: visible;
 }
-.sync-indicator:hover:not(:disabled) .sync-ring { color: #5a6e52; }
-.sync-dot {
-  position: absolute;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  inset: 6px;
-  background: #6abf69;
-  transition: background 150ms ease;
+.standing-sync__dot {
+  fill: #6fbf5f;
 }
-.sync-indicator-synced .sync-dot,
-.sync-indicator-idle .sync-dot  { background: #6abf69; }
-.sync-indicator-syncing .sync-dot { background: #6abf69; }
-.sync-indicator-failed .sync-dot  { background: var(--danger); }
-.sync-indicator-failed .sync-ring { color: var(--danger); opacity: 0.6; }
-.sync-indicator-no-mailbox .sync-dot { background: #3a4035; }
-.sync-indicator-no-mailbox .sync-ring { color: #2a2f26; }
-@keyframes spin-cw { to { transform: rotate(360deg); } }
-.sync-indicator-syncing .sync-ring { animation: spin-cw 0.8s linear infinite; }
+.standing-sync__arrows {
+  color: rgba(245, 246, 247, 0.68);
+}
+.standing-sync.is-syncing .standing-sync__arrows {
+  animation: standing-sync-rotate 900ms linear infinite;
+}
+@keyframes standing-sync-rotate {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .standing-sync.is-syncing .standing-sync__arrows {
+    animation: none;
+  }
+}
 
 /* ── Settings page ──────────────────────────────────────────────────────────── */
 .settings-shell {
