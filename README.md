@@ -1,4 +1,4 @@
-# Standing™
+# Standing
 
 **Relationship Command**
 
